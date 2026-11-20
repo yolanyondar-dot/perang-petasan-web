@@ -538,7 +538,7 @@ button {
 
 .minimap-panel {
   position: relative;
-  width: clamp(140px, 19vw, 220px);
+  width: clamp(168px, 22vw, 280px);
   padding: 7px;
   border-radius: 14px;
   background: rgba(8, 24, 14, 0.88);
@@ -563,6 +563,15 @@ button {
 }
 
 /* Score bar */
+
+#hud-stocks {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 2px;
+  color: #ffd54f;
+}
 
 .score-panel {
   display: flex;
@@ -1073,7 +1082,7 @@ button {
   }
 
   .minimap-panel {
-    width: 108px;
+    width: 138px;
     padding: 4px;
   }
 

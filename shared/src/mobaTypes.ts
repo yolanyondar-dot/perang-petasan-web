@@ -1,12 +1,12 @@
-/** Kontrak bersama client <-> server untuk arena PvP 2D top-down. Tanpa dependensi engine. */
+/** Kontrak bersama client <-> server untuk fighting 2D side-view. Tanpa dependensi engine. */
 import type { RoomMode, TeamId } from './types.js';
 
 export type MobaSkillKey = 'basic' | 'skill1' | 'skill2' | 'ultimate';
 export type MobaUnitKind = 'hero' | 'minion' | 'turret' | 'base' | 'boss';
 export type MobaLane = 'top' | 'mid' | 'bottom';
-export type MobaAnim = 'idle' | 'walk' | 'attack' | 'cast' | 'dead';
+export type MobaAnim = 'idle' | 'walk' | 'jump' | 'dash' | 'hurt' | 'attack' | 'cast' | 'dead';
 export type MobaEffectKind =
-  | 'explosion' | 'hit' | 'ko' | 'levelup' | 'gold' | 'turret_fire' | 'boss_spawn' | 'heal';
+  | 'explosion' | 'hit' | 'ko' | 'levelup' | 'gold' | 'turret_fire' | 'boss_spawn' | 'heal' | 'dash';
 
 /* ------------------------------------------------------------------ catalog */
 
@@ -113,10 +113,20 @@ export interface MobaHeroView extends MobaUnitView {
   cdSkill2: number;
   cdUltimate: number;
   respawnIn: number;
+  /** Side-view: z adalah ketinggian dari lantai. */
+  vx: number;
+  vz: number;
+  stocks: number;
+  maxStocks: number;
+  grounded: boolean;
+  jumpCount: number;
+  combo: number;
   /** Timestamp server (ms elapsed) untuk efek sementara. */
   speedBoostUntil: number;
   slowUntil: number;
   stunUntil: number;
+  hitstunUntil: number;
+  dashUntil: number;
 }
 
 export interface MobaMinionView extends MobaUnitView {
@@ -166,7 +176,7 @@ export interface MobaEffectView {
 /** Bentuk state yang dikonsumsi renderer/HUD (turunan dari schema Colyseus). */
 export interface ClientMobaState {
   mode: RoomMode;
-  phase: 'waiting' | 'playing' | 'finished';
+  phase: 'waiting' | 'playing' | 'intermission' | 'finished';
   elapsedMs: number;
   timeLeft: number;
   scoreMerah: number;
@@ -174,6 +184,10 @@ export interface ClientMobaState {
   baseHpMerah: number;
   baseHpPutih: number;
   bossSpawnIn: number;
+  round: number;
+  intermissionMs: number;
+  roundWinner: TeamId | 'draw' | '';
+  winner: TeamId | 'draw' | '';
   heroes: Record<string, MobaHeroView>;
   minions: Record<string, MobaMinionView>;
   turrets: Record<string, MobaTurretView>;
@@ -195,8 +209,12 @@ export const MOBA_MESSAGES = {
 } as const;
 
 export interface MobaMoveMessage {
+  /** -1 kiri, 1 kanan. */
   dx: number;
+  /** -1 bawah, 1 atas (atas = jump). */
   dz: number;
+  jump: boolean;
+  dash: boolean;
   aimX: number;
   aimZ: number;
 }
@@ -223,7 +241,8 @@ export interface MobaMatchEndMessage {
   scoreMerah: number;
   scorePutih: number;
   rewards: Record<string, number>;
-  reason: 'timeout' | 'scorelimit';
+  reason: 'rounds' | 'timeout';
+  round: number;
 }
 
 export interface MobaKoMessage {

@@ -1,4 +1,4 @@
-# Deploy Produksi — Perang Petasan: Arena PvP 2D
+# Deploy Produksi — Perang Petasan: Fighting PvP 2D Side-View
 
 ## Topologi (dipakai Render)
 
@@ -105,7 +105,7 @@ TTL:    300
 
 ### 5. Verifikasi beta
 
-1. Buka `https://petasan.yondarprojects.my.id/` — logo tampil, arena kartun 2D di latar.
+1. Buka `https://petasan.yondarprojects.my.id/` — logo tampil, stage fighting kartun 2D di latar.
 2. Pilih hero + mode, klik **MASUK ARENA**. Di Network harus tampil:
    - `POST /ws/matchmake/joinOrCreate/moba` → **200**
    - `wss://.../ws/<roomId>/<sessionId>` → **101 Switching Protocols**

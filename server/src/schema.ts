@@ -21,6 +21,15 @@ export class HeroSchema extends Schema {
   @type('number') assists = 0;
   @type('number') xp = 0;
   @type('number') respawnIn = 0;
+  @type('number') vx = 0;
+  @type('number') vz = 0;
+  @type('number') stocks = 3;
+  @type('number') maxStocks = 3;
+  @type('boolean') grounded = true;
+  @type('number') jumpCount = 0;
+  @type('number') combo = 0;
+  @type('number') hitstunUntil = 0;
+  @type('number') dashUntil = 0;
   @type('number') cdBasic = 0;
   @type('number') cdSkill1 = 0;
   @type('number') cdSkill2 = 0;
@@ -114,7 +123,7 @@ export class EffectSchema extends Schema {
 
 export class MobaState extends Schema {
   @type('string') mode: RoomMode = '5v5';
-  @type('string') phase: 'waiting' | 'playing' | 'finished' = 'waiting';
+  @type('string') phase: 'waiting' | 'playing' | 'intermission' | 'finished' = 'waiting';
   @type('number') elapsedMs = 0;
   @type('number') timeLeft = 0;
   @type('number') scoreMerah = 0;
@@ -122,6 +131,10 @@ export class MobaState extends Schema {
   @type('number') baseHpMerah = 0;
   @type('number') baseHpPutih = 0;
   @type('number') bossSpawnIn = 0;
+  @type('number') round = 1;
+  @type('number') intermissionMs = 0;
+  @type('string') roundWinner = '';
+  @type('string') winner = '';
   @type({ map: HeroSchema }) heroes = new MapSchema<HeroSchema>();
   @type({ map: MinionSchema }) minions = new MapSchema<MinionSchema>();
   @type({ map: TurretSchema }) turrets = new MapSchema<TurretSchema>();

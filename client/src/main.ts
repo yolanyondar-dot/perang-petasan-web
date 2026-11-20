@@ -114,44 +114,56 @@ renderSurface.addEventListener('pointerdown', (event) => {
 const pressed = new Set<string>();
 window.addEventListener('keydown', (event) => {
   const key = event.key.toLowerCase();
-  if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+  if (
+    ['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(key)
+  ) {
     pressed.add(key);
   }
 });
 window.addEventListener('keyup', (event) => pressed.delete(event.key.toLowerCase()));
 window.addEventListener('blur', () => pressed.clear());
 
-/** Top-down: kanan layar = +x, bawah layar = +z. */
-function movementVector(state: ClientMobaState | null): { dx: number; dz: number } {
+let prevJumpHeld = false;
+let prevDashHeld = false;
+
+/** Side-view: A/D jalan, W/Atas/Space lompat (dua kali), Shift dash. */
+function movementVector(state: ClientMobaState | null): {
+  dx: number;
+  dz: number;
+  jump: boolean;
+  dash: boolean;
+  aimX: number;
+  aimZ: number;
+} {
   let vx = hud.joystick.vector.x;
-  let vy = hud.joystick.vector.y;
+  let jumpHeld = hud.joystick.vector.y < -0.45;
 
   if (pressed.size > 0) {
     vx = 0;
-    vy = 0;
+    jumpHeld = false;
     if (pressed.has('a') || pressed.has('arrowleft')) vx -= 1;
     if (pressed.has('d') || pressed.has('arrowright')) vx += 1;
-    if (pressed.has('w') || pressed.has('arrowup')) vy -= 1;
-    if (pressed.has('s') || pressed.has('arrowdown')) vy += 1;
+    if (pressed.has('w') || pressed.has('arrowup') || pressed.has(' ')) jumpHeld = true;
   }
 
-  const length = Math.hypot(vx, vy);
-  if (length > 1) {
-    vx /= length;
-    vy /= length;
+  const dx = Math.max(-1, Math.min(1, vx));
+  const dashHeld = pressed.has('shift');
+  const jump = jumpHeld && !prevJumpHeld;
+  const dash = dashHeld && !prevDashHeld;
+  prevJumpHeld = jumpHeld;
+  prevDashHeld = dashHeld;
+
+  let aimX = aim.x;
+  let aimZ = aim.z;
+  if (!hasAim) {
+    const hero = state
+      ? Object.values(state.heroes).find((unit) => unit.id === network.sessionId)
+      : null;
+    aimX = hero ? hero.x + hero.facing * 9 : dx * 9;
+    aimZ = hero ? hero.z + 1.5 : 1.5;
   }
 
-  const dx = vx;
-  const dz = vy;
-
-  if (hasAim) return { dx, dz };
-
-  const hero = state ? Object.values(state.heroes).find((unit) => unit.id === network.sessionId) : null;
-  if (!hero) return { dx, dz };
-  return {
-    dx: hero.x + Math.cos(hero.facing) * 10,
-    dz: hero.z + Math.sin(hero.facing) * 10,
-  };
+  return { dx, dz: jumpHeld ? 1 : 0, jump, dash, aimX, aimZ };
 }
 
 /* ------------------------------------------------------------- match flow */
@@ -167,6 +179,8 @@ async function joinMatch(mode: RoomMode, profile: PlayerProfile): Promise<void> 
     }, profile.name);
     inMatch = true;
     hasAim = false;
+    prevJumpHeld = false;
+    prevDashHeld = false;
     renderer.setAimIndicator(0, 0, false);
     lobby.hide();
     hud.show();
@@ -181,6 +195,8 @@ async function backToLobby(): Promise<void> {
   renderer.setAimIndicator(0, 0, false);
   hud.hide();
   pressed.clear();
+  prevJumpHeld = false;
+  prevDashHeld = false;
   await network.leave();
   lobby.setStatus('');
   lobby.show();
@@ -222,8 +238,8 @@ function frame(now: number): void {
   if (inMatch && state && state.phase === 'playing') {
     if (now - lastMoveSend >= 50) {
       lastMoveSend = now;
-      const { dx, dz } = movementVector(state);
-      network.sendMove({ dx, dz, aimX: aim.x, aimZ: aim.z });
+      const move = movementVector(state);
+      network.sendMove(move);
     }
   }
 

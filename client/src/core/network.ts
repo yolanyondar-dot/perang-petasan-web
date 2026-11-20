@@ -67,9 +67,18 @@ function hero(row: Row): MobaHeroView {
     cdSkill2: row.cdSkill2,
     cdUltimate: row.cdUltimate,
     respawnIn: row.respawnIn,
+    vx: row.vx,
+    vz: row.vz,
+    stocks: row.stocks,
+    maxStocks: row.maxStocks,
+    grounded: row.grounded,
+    jumpCount: row.jumpCount,
+    combo: row.combo,
     speedBoostUntil: row.speedBoostUntil,
     slowUntil: row.slowUntil,
     stunUntil: row.stunUntil,
+    hitstunUntil: row.hitstunUntil,
+    dashUntil: row.dashUntil,
   };
 }
 
@@ -125,7 +134,7 @@ function resolveEndpoint(): string {
   if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
     return 'ws://localhost:2567';
   }
-  // Produksi: Nginx meneruskan /ws/ ke Colyseus di port 2567.
+  // Produksi: Render meneruskan /ws/ ke Colyseus di origin yang sama.
   return `${protocol}://${location.host}/ws`;
 }
 
@@ -174,6 +183,10 @@ class NetworkManager {
       baseHpMerah: s.baseHpMerah,
       baseHpPutih: s.baseHpPutih,
       bossSpawnIn: s.bossSpawnIn,
+      round: s.round,
+      intermissionMs: s.intermissionMs,
+      roundWinner: s.roundWinner,
+      winner: s.winner,
       heroes: toRecord(s.heroes, hero),
       minions: toRecord(s.minions, minion),
       turrets: toRecord(s.turrets, turret),

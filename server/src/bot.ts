@@ -1,13 +1,5 @@
-import {
-  ARENA_CENTER,
-  ARENA_SPAWNS,
-  MOBA_BALANCE,
-  distance,
-  otherTeam,
-  type MobaSkillKey,
-  type TeamId,
-} from '@pp/shared';
-import { HEROES, HERO_LIST, ITEM_LIST, pickRandom } from './config.js';
+import { FIGHT_BALANCE, MOBA_BALANCE, distance, otherTeam, type MobaSkillKey } from '@pp/shared';
+import { FIGHT_HERO_LIST, HEROES, ITEM_LIST, pickRandom } from './config.js';
 import type { HeroSchema, MobaState } from './schema.js';
 
 const BOT_NAMES = [
@@ -30,6 +22,8 @@ export interface ArenaBotWorld {
 export interface MobaBotIntent {
   dx: number;
   dz: number;
+  jump: boolean;
+  dash: boolean;
   aimX: number;
   aimZ: number;
   skill?: MobaSkillKey;
@@ -41,38 +35,23 @@ export function randomBotName(sequence: number): string {
 }
 
 export function randomBotHeroId(): string {
-  return pickRandom(HERO_LIST).id;
-}
-
-function hashId(id: string): number {
-  let value = 0;
-  for (let i = 0; i < id.length; i += 1) value = (value * 31 + id.charCodeAt(i)) | 0;
-  return Math.abs(value);
+  return pickRandom(FIGHT_HERO_LIST).id;
 }
 
 function nearestEnemy(bot: HeroSchema, state: MobaState): HeroSchema | undefined {
-  const enemy = otherTeam(bot.team as TeamId);
+  const enemy = otherTeam(bot.team);
   let best: HeroSchema | undefined;
   let bestScore = Number.POSITIVE_INFINITY;
   for (const hero of state.heroes.values()) {
     if (!hero.alive || hero.id === bot.id || hero.team !== enemy) continue;
-    const d = distance(bot, hero);
-    const lowHpBonus = (1 - hero.hp / Math.max(1, hero.maxHp)) * 7;
-    const score = d - lowHpBonus;
-    if (score < bestScore) {
-      bestScore = score;
+    const d = Math.abs(hero.x - bot.x) + Math.abs(hero.z - bot.z) * 0.6;
+    const lowHpBonus = (1 - hero.hp / Math.max(1, hero.maxHp)) * 4;
+    if (d - lowHpBonus < bestScore) {
+      bestScore = d - lowHpBonus;
       best = hero;
     }
   }
   return best;
-}
-
-function roamPoint(bot: HeroSchema): { x: number; z: number } {
-  const angle = (hashId(bot.id) % 360) * (Math.PI / 180);
-  return {
-    x: ARENA_CENTER.x + Math.cos(angle) * 9,
-    z: ARENA_CENTER.z + Math.sin(angle) * 9,
-  };
 }
 
 function cooldownFor(bot: HeroSchema, key: MobaSkillKey): number {
@@ -82,93 +61,97 @@ function cooldownFor(bot: HeroSchema, key: MobaSkillKey): number {
   return bot.cdUltimate;
 }
 
-function chooseSkill(bot: HeroSchema, key: MobaSkillKey, targetDistance: number): boolean {
-  const hero = HEROES[bot.heroId];
-  if (!hero) return false;
-  if (bot.level < (MOBA_BALANCE.skillUnlockLevel[key] ?? 1)) return false;
-  if (cooldownFor(bot, key) > 0) return false;
-
-  if (key === 'basic') return targetDistance <= hero.baseStats.attackRange + 1.2;
-
-  const def = hero.skills[key];
-  if (def.type === 'dash_buff') {
-    // Dash dipakai untuk menutup jarak, bukan saat sudah berhimpitan.
-    return targetDistance >= Math.max(5, hero.baseStats.attackRange * 1.4);
-  }
-  const reach = Math.max(def.range, def.radius, hero.baseStats.attackRange, 3) + 1;
-  return targetDistance <= reach;
-}
-
 function choosePurchase(bot: HeroSchema): string | undefined {
   if (bot.items.length >= 6 || bot.gold < 300) return undefined;
   const affordable = ITEM_LIST.filter(
     (item) => item.cost <= bot.gold && !bot.items.includes(item.id),
   );
-  if (affordable.length === 0) return undefined;
   affordable.sort((a, b) => b.cost - a.cost);
-  return affordable[0]!.id;
+  return affordable[0]?.id;
 }
 
-/** Bot arena: memburu hero musuh, strafe, mundur saat low HP, tetap beli item. */
+function chooseSkill(
+  bot: HeroSchema,
+  key: MobaSkillKey,
+  horizontal: number,
+  vertical: number,
+): boolean {
+  const hero = HEROES[bot.heroId];
+  if (!hero) return false;
+  if (bot.level < (MOBA_BALANCE.skillUnlockLevel[key] ?? 1)) return false;
+  if (cooldownFor(bot, key) > 0) return false;
+
+  if (key === 'basic') {
+    return horizontal <= hero.baseStats.attackRange + 1 && vertical <= 3.5;
+  }
+
+  const def = hero.skills[key];
+  if (def.type === 'dash_buff') return horizontal >= 5;
+  const reach = Math.max(def.range, def.radius, 2.5) + 2;
+  return horizontal <= reach && vertical <= Math.max(6, def.radius + 2);
+}
+
+/** Bot side-view: mendekat, lompat mengejar, menyerang, dan sesekali dash. */
 export function decideArenaBot(bot: HeroSchema, world: ArenaBotWorld): MobaBotIntent {
-  const travel = (x: number, z: number): { dx: number; dz: number } => {
-    const dx = x - bot.x;
-    const dz = z - bot.z;
-    const length = Math.hypot(dx, dz) || 1;
-    return { dx: dx / length, dz: dz / length };
+  const idle: MobaBotIntent = {
+    dx: 0,
+    dz: 0,
+    jump: false,
+    dash: false,
+    aimX: bot.x + (bot.facing >= 0 ? 4 : -4),
+    aimZ: bot.z + 1,
   };
+  if (!bot.alive || world.state.phase !== 'playing') return idle;
 
-  if (!bot.alive || world.state.phase !== 'playing') {
-    return { dx: 0, dz: 0, aimX: bot.x + 1, aimZ: bot.z };
-  }
-
-  const buyItemId = choosePurchase(bot);
   const target = nearestEnemy(bot, world.state);
-  const aimX = target?.x ?? roamPoint(bot).x;
-  const aimZ = target?.z ?? roamPoint(bot).z;
-  const lowHp = bot.hp <= Math.max(1, bot.maxHp) * 0.32;
+  const buyItemId = choosePurchase(bot);
+  if (!target) return { ...idle, buyItemId };
 
-  if (lowHp) {
-    const spawn = ARENA_SPAWNS[bot.team as TeamId];
-    const away = travel(spawn.x, spawn.z);
-    const dash = cooldownFor(bot, 'skill2') <= 0 && HEROES[bot.heroId]?.skills.skill2.type === 'dash_buff';
-    return { ...away, aimX, aimZ, skill: dash ? 'skill2' : undefined, buyItemId };
-  }
-
-  if (!target) {
-    const point = roamPoint(bot);
-    return { ...travel(point.x, point.z), aimX, aimZ, buyItemId };
-  }
-
-  const d = distance(bot, target);
+  const horizontal = target.x - bot.x;
+  const vertical = target.z - bot.z;
+  const absHorizontal = Math.abs(horizontal);
+  const sign = horizontal >= 0 ? 1 : -1;
+  const aimX = target.x;
+  const aimZ = target.z + Math.min(2, vertical * 0.4);
   const attackRange = HEROES[bot.heroId]?.baseStats.attackRange ?? 2.5;
-  let movement: { dx: number; dz: number };
-  if (d > attackRange * 0.85) {
-    movement = travel(target.x, target.z);
-  } else if (d < attackRange * 0.4) {
-    movement = travel(bot.x - (target.x - bot.x), bot.z - (target.z - bot.z));
-  } else {
-    const side = Math.sin(world.state.elapsedMs / 900 + hashId(bot.id)) >= 0 ? 1 : -1;
-    const sx = -(target.z - bot.z) * side;
-    const sz = (target.x - bot.x) * side;
-    const length = Math.hypot(sx, sz) || 1;
-    movement = { dx: sx / length, dz: sz / length };
-  }
+
+  let dx = 0;
+  if (absHorizontal > attackRange * 0.8) dx = sign;
+  else if (absHorizontal < attackRange * 0.35) dx = -sign * 0.6;
+
+  const jump =
+    bot.grounded &&
+    (vertical > 2.2 || (vertical < -2.2 && absHorizontal <= attackRange + 2)) &&
+    bot.jumpCount === 0;
+  const dash =
+    cooldownFor(bot, 'skill2') <= 0 &&
+    HEROES[bot.heroId]?.skills.skill2.type === 'dash_buff' &&
+    absHorizontal >= FIGHT_BALANCE.dashSpeed * 0.3;
 
   let skill: MobaSkillKey | undefined;
-  for (const key of ['ultimate', 'skill1', 'skill2'] as const) {
-    if (chooseSkill(bot, key, d)) {
+  for (const key of ['ultimate', 'skill1', 'skill2', 'basic'] as const) {
+    if (chooseSkill(bot, key, absHorizontal, Math.abs(vertical))) {
       skill = key;
       break;
     }
   }
-  if (!skill && chooseSkill(bot, 'basic', d)) skill = 'basic';
 
-  // Menjaga nyawa menjelang akhir match: bot agresif tapi tidak bunuh diri.
-  if (world.state.timeLeft <= 8 && bot.hp < bot.maxHp * 0.5) {
-    const spawn = ARENA_SPAWNS[bot.team as TeamId];
-    return { ...travel(spawn.x, spawn.z), aimX, aimZ, buyItemId };
-  }
+  // Mundur sebentar saat nyawa terakhir dan HP rendah, tapi tetap menyerang jarak jauh.
+  const desperate = bot.stocks <= 1 && bot.hp <= bot.maxHp * 0.28;
+  if (desperate && absHorizontal < attackRange + 2) dx = -sign;
 
-  return { ...movement, aimX, aimZ, skill, buyItemId };
+  return {
+    dx,
+    dz: jump ? 1 : 0,
+    jump,
+    dash,
+    aimX,
+    aimZ,
+    skill,
+    buyItemId,
+  };
+}
+
+export function botDistance(a: HeroSchema, b: HeroSchema): number {
+  return distance(a, b);
 }

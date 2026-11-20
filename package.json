@@ -2,7 +2,7 @@
   "name": "perang-petasan-web",
   "version": "0.1.0",
   "private": true,
-  "description": "Perang Petasan: Arena PvP 2D - browser multiplayer top-down bertema kampung",
+  "description": "Perang Petasan: Fighting PvP 2D side-view - browser multiplayer bertema kampung",
   "workspaces": [
     "shared",
     "server",

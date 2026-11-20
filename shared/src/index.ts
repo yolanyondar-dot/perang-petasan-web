@@ -5,5 +5,6 @@ export * from './stats.js';
 export * from './catalog.js';
 export * from './mobaTypes.js';
 export * from './mobaMap.js';
+export * from './fightMap.js';
 export * from './mobaCatalog.js';
 export * from './mobaBalance.js';

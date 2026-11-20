@@ -1,5 +1,11 @@
 import { ROOM_MODES, heroStatsAtThr, thrCostFor, type RoomMode } from '@pp/shared';
-import { HERO_LIST, HEROES, heroPortrait } from '../core/catalog.js';
+import { HEROES, heroPortrait } from '../core/catalog.js';
+
+/** 4 hero pertama dipakai untuk beta fighting side-view. */
+const ACTIVE_HERO_IDS = ['bocil_sarung', 'abang_ronda', 'tukang_lodong', 'emak_daster'] as const;
+const ACTIVE_HERO_LIST = ACTIVE_HERO_IDS.map((id) => HEROES[id]).filter(
+  (hero): hero is NonNullable<typeof hero> => Boolean(hero),
+);
 import { audio } from '../core/audio.js';
 import {
   buyHeroUpgrade,
@@ -45,7 +51,10 @@ export class Lobby {
   }
 
   private render(): void {
-    const hero = HEROES[this.profile.heroId] ?? HERO_LIST[0]!;
+    const hero =
+      HEROES[this.profile.heroId] ??
+      ACTIVE_HERO_LIST.find((entry) => ACTIVE_HERO_IDS.includes(entry.id as (typeof ACTIVE_HERO_IDS)[number])) ??
+      ACTIVE_HERO_LIST[0]!;
     const level = heroLevel(this.profile, hero.id);
     const stats = heroStatsAtThr(hero, level);
     const maxed = level >= hero.thrUpgradeScaling.maxLevel;
@@ -64,7 +73,7 @@ export class Lobby {
 
         <div class="lobby-title">
           <h1>PILIH HERO &amp; MODE</h1>
-          <p>Arena PvP 2D • Skill MOBA • Skor Kill Tertinggi Saat Waktu Habis</p>
+          <p>Fighting 2D Side-View • 3 Nyawa • Best-of-3 Round • Bot Isi Slot Kosong</p>
         </div>
 
         <div class="mode-row">
@@ -78,7 +87,7 @@ export class Lobby {
           <section class="hero-select panel">
             <h2>DAFTAR HERO</h2>
             <div class="hero-cards">
-              ${HERO_LIST.map((entry) => {
+              ${ACTIVE_HERO_LIST.map((entry) => {
                 const selected = entry.id === this.profile.heroId;
                 const lv = heroLevel(this.profile, entry.id);
                 return `<button class="hero-card ${selected ? 'selected' : ''}" data-hero="${entry.id}" style="--hero-color:${entry.colorTheme}">
@@ -105,8 +114,8 @@ export class Lobby {
               <div><b>🌟 ${hero.skills.ultimate.name}</b><span>Unlock Lv.4</span></div>
             </div>
             <details class="design-ref">
-              <summary>REFERENSI DESAIN ARENA</summary>
-              <img src="/assets/maps/design_map.png" alt="Desain arena kampung" />
+              <summary>REFERENSI STAGE KAMPUNG</summary>
+              <img src="/assets/maps/design_map.png" alt="Desain stage kampung" />
             </details>
           </section>
 
@@ -126,7 +135,7 @@ export class Lobby {
         <footer class="lobby-footer">
           <input id="player-name" maxlength="18" value="${this.profile.name.replace(/"/g, '&quot;')}" placeholder="Nama pemain" />
           <button class="primary-btn" id="btn-join" ${this.joining ? 'disabled' : ''}>
-            ${this.joining ? 'MENGHUBUNGI...' : '🏆 MASUK ARENA'}
+            ${this.joining ? 'MENGHUBUNGI...' : '🥊 MASUK STAGE'}
           </button>
           <div class="lobby-status">${this.status}</div>
         </footer>

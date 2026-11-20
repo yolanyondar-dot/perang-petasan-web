@@ -1,24 +1,18 @@
 /**
- * Renderer 2D top-down untuk arena PvP Perang Petasan.
- * Mengonsumsi kontrak ClientMobaState yang sama dengan server Colyseus;
- * tidak memakai Three.js / WebGL agar ringan dan sesuai dengan aset kartun 2D.
+ * Renderer Canvas2D side-view untuk fighting game Perang Petasan.
+ * API `createMobaRenderer()` dipertahankan; koordinat z adalah ketinggian dari lantai.
  */
 import {
-  ARENA_CENTER,
-  ARENA_CENTER_RADIUS,
-  ARENA_COVER,
-  ARENA_SPAWNS,
-  ARENA_SPAWN_RADIUS,
-  MOBA_BUSHES,
-  MOBA_HALF,
-  MOBA_WORLD_SIZE,
+  FIGHT_GROUND_Z,
+  FIGHT_HALF_WIDTH,
+  FIGHT_PLATFORMS,
+  FIGHT_SPAWNS,
+  FIGHT_WORLD_HEIGHT,
 } from '@pp/shared';
 import type {
   ClientMobaState,
   MobaEffectView,
   MobaHeroView,
-  MobaProjectileView,
-  MobaUnitView,
   TeamId,
 } from '@pp/shared';
 import { HEROES, heroPortrait } from '../core/catalog.js';
@@ -52,25 +46,28 @@ interface FloatingText {
   maxLife: number;
 }
 
+interface ExplosionFlash {
+  x: number;
+  z: number;
+  life: number;
+  maxLife: number;
+  radius: number;
+}
+
 const TAU = Math.PI * 2;
-const VIEW_HEIGHT = 62;
+const VIEW_HEIGHT = 33;
 
 const TEAM_COLOR: Record<TeamId, string> = {
   team_merah: '#ef5350',
   team_putih: '#f5f5f5',
 };
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function damp(current: number, target: number, lambda: number, dtSeconds: number): number {
-  return current + (target - current) * (1 - Math.exp(-lambda * dtSeconds));
-}
-
-function hashText(value: string): number {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) hash = (hash * 31 + value.charCodeAt(i)) | 0;
-  return Math.abs(hash);
+function damp(current: number, target: number, lambda: number, dt: number): number {
+  return current + (target - current) * (1 - Math.exp(-lambda * dt));
 }
 
 function loadImage(src: string): HTMLImageElement {
@@ -105,7 +102,7 @@ function roundedRect(
   ctx.closePath();
 }
 
-class CanvasMobaRenderer implements MobaRenderer {
+class CanvasFightRenderer implements MobaRenderer {
   private container: HTMLElement | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
@@ -115,16 +112,11 @@ class CanvasMobaRenderer implements MobaRenderer {
   private dpr = 1;
   private scale = 10;
   private camX = 0;
-  private camZ = 0;
-  private targetX = 0;
-  private targetZ = 0;
+  private camZ = 6;
   private shake = 0;
   private elapsedMs = 0;
 
   private localHeroId = '';
-  private localX = 0;
-  private localZ = 0;
-  private localTeam: TeamId | null = null;
   private hasLocal = false;
 
   private aimX = 0;
@@ -136,9 +128,9 @@ class CanvasMobaRenderer implements MobaRenderer {
   private readonly explosionImage = loadImage('/assets/effects/efek_ledakan.png');
 
   private readonly seenEffects = new Set<string>();
-  private readonly effectBorn = new Map<string, number>();
   private readonly particles: Particle[] = [];
   private readonly texts: FloatingText[] = [];
+  private explosionFlash: ExplosionFlash | null = null;
 
   private mounted = false;
   private disposed = false;
@@ -171,7 +163,7 @@ class CanvasMobaRenderer implements MobaRenderer {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     const aspect = this.width / this.height;
-    const viewHeight = aspect < 0.85 ? VIEW_HEIGHT * (0.85 / aspect) : VIEW_HEIGHT;
+    const viewHeight = aspect < 0.9 ? VIEW_HEIGHT * (0.9 / aspect) : VIEW_HEIGHT;
     this.scale = this.height / viewHeight;
     this.clampCamera();
   }
@@ -184,7 +176,7 @@ class CanvasMobaRenderer implements MobaRenderer {
     const sy = ((clientY - rect.top) / rect.height) * this.height;
     return {
       x: (sx - this.width / 2) / this.scale + this.camX,
-      z: (sy - this.height / 2) / this.scale + this.camZ,
+      z: (this.height / 2 - sy) / this.scale + this.camZ,
     };
   }
 
@@ -203,31 +195,19 @@ class CanvasMobaRenderer implements MobaRenderer {
 
     if (state) {
       const local = state.heroes[localHeroId] ?? null;
+      this.hasLocal = Boolean(local);
       if (local) {
-        this.localX = local.x;
-        this.localZ = local.z;
-        this.localTeam = local.team;
-        this.hasLocal = true;
-        this.targetX = local.x;
-        this.targetZ = local.z;
-      } else {
-        this.hasLocal = false;
-        this.localTeam = null;
-        this.targetX = this.aimVisible ? this.aimX : 0;
-        this.targetZ = this.aimVisible ? this.aimZ : 0;
+        this.camX = damp(this.camX, local.x, 7, dtSeconds);
+        this.camZ = damp(this.camZ, clamp(local.z + 5, 5, FIGHT_WORLD_HEIGHT - 8), 5, dtSeconds);
       }
       this.syncEffects(state);
     } else {
       this.hasLocal = false;
-      this.localTeam = null;
-      this.targetX = 0;
-      this.targetZ = 0;
+      this.camX = damp(this.camX, 0, 4, dtSeconds);
+      this.camZ = damp(this.camZ, 6, 4, dtSeconds);
       this.seenEffects.clear();
-      this.effectBorn.clear();
     }
 
-    this.camX = damp(this.camX, this.targetX, 6, dtSeconds);
-    this.camZ = damp(this.camZ, this.targetZ, 6, dtSeconds);
     this.shake = Math.max(0, this.shake - dtSeconds * 2.6);
     this.clampCamera();
     this.updateParticles(dtSeconds);
@@ -242,7 +222,6 @@ class CanvasMobaRenderer implements MobaRenderer {
     this.texts.length = 0;
     this.portraits.clear();
     this.seenEffects.clear();
-    this.effectBorn.clear();
     this.canvas?.parentElement?.removeChild(this.canvas);
     this.canvas = null;
     this.ctx = null;
@@ -258,13 +237,11 @@ class CanvasMobaRenderer implements MobaRenderer {
       active.add(effect.id);
       if (this.seenEffects.has(effect.id)) continue;
       this.seenEffects.add(effect.id);
-      this.effectBorn.set(effect.id, this.elapsedMs);
       this.spawnEffect(effect);
     }
     for (const id of Array.from(this.seenEffects)) {
       if (active.has(id)) continue;
       this.seenEffects.delete(id);
-      this.effectBorn.delete(id);
     }
   }
 
@@ -274,29 +251,60 @@ class CanvasMobaRenderer implements MobaRenderer {
     switch (effect.kind) {
       case 'explosion':
       case 'boss_spawn':
-        this.spawnBurst(effect.x, effect.z, color, effect.kind === 'boss_spawn' ? 34 : 18, radius, 9);
+        this.spawnBurst(effect.x, effect.z, color, 18, radius, 9);
+        this.explosionFlash = {
+          x: effect.x,
+          z: effect.z,
+          radius,
+          life: 360,
+          maxLife: 360,
+        };
         this.texts.push({
           x: effect.x,
-          z: effect.z - 2,
-          text: effect.kind === 'boss_spawn' ? 'ONDEL-ONDEL!' : 'BOOM!',
+          z: effect.z + 2,
+          text: 'BOOM!',
           color,
-          life: 900,
-          maxLife: 900,
+          life: 850,
+          maxLife: 850,
         });
-        this.shake = Math.min(1.4, this.shake + (effect.kind === 'boss_spawn' ? 1.2 : 0.6));
+        this.shake = Math.min(1.4, this.shake + 0.6);
         break;
       case 'ko':
         this.spawnBurst(effect.x, effect.z, '#33373b', 16, radius * 0.7, 5);
-        this.texts.push({ x: effect.x, z: effect.z - 2, text: 'K.O.!', color: '#ffd54f', life: 1000, maxLife: 1000 });
+        this.texts.push({
+          x: effect.x,
+          z: effect.z + 2.4,
+          text: 'K.O.!',
+          color: '#ffd54f',
+          life: 1000,
+          maxLife: 1000,
+        });
         this.shake = Math.min(1.4, this.shake + 0.4);
         break;
       case 'levelup':
-        this.texts.push({ x: effect.x, z: effect.z - 2, text: 'LEVEL UP!', color: '#ffe082', life: 1100, maxLife: 1100 });
+        this.texts.push({
+          x: effect.x,
+          z: effect.z + 2,
+          text: 'LEVEL UP!',
+          color: '#ffe082',
+          life: 1100,
+          maxLife: 1100,
+        });
         this.spawnBurst(effect.x, effect.z, '#ffe082', 12, 2, 4);
         break;
       case 'gold':
-        this.texts.push({ x: effect.x, z: effect.z - 2, text: '+ KOIN', color: '#ffd700', life: 900, maxLife: 900 });
+        this.texts.push({
+          x: effect.x,
+          z: effect.z + 2,
+          text: '+ KOIN',
+          color: '#ffd700',
+          life: 900,
+          maxLife: 900,
+        });
         this.spawnBurst(effect.x, effect.z, '#ffd700', 10, 1.5, 3);
+        break;
+      case 'dash':
+        this.spawnBurst(effect.x, effect.z, color, 10, 1.6, 5);
         break;
       case 'heal':
         this.spawnBurst(effect.x, effect.z, '#69f0ae', 10, 1.5, 3);
@@ -344,423 +352,303 @@ class CanvasMobaRenderer implements MobaRenderer {
       }
       particle.x += particle.vx * dtSeconds;
       particle.z += particle.vz * dtSeconds;
-      const friction = Math.max(0, 1 - dtSeconds * 3.2);
+      particle.vz -= 12 * dtSeconds;
+      const friction = Math.max(0, 1 - dtSeconds * 2.2);
       particle.vx *= friction;
-      particle.vz *= friction;
     }
     for (let i = this.texts.length - 1; i >= 0; i -= 1) {
       const text = this.texts[i]!;
       text.life -= dtSeconds * 1000;
+      text.z += dtSeconds * 2.4;
       if (text.life <= 0) this.texts.splice(i, 1);
+    }
+    if (this.explosionFlash) {
+      this.explosionFlash.life -= dtSeconds * 1000;
+      if (this.explosionFlash.life <= 0) this.explosionFlash = null;
     }
   }
 
   private clampCamera(): void {
-    const limit = MOBA_HALF + 4;
     const halfW = this.width / (2 * this.scale);
     const halfH = this.height / (2 * this.scale);
-    this.camX = halfW * 2 >= limit * 2 ? 0 : clamp(this.camX, -limit + halfW, limit - halfW);
-    this.camZ = halfH * 2 >= limit * 2 ? 0 : clamp(this.camZ, -limit + halfH, limit - halfH);
+    this.camX =
+      halfW * 2 >= FIGHT_HALF_WIDTH * 2
+        ? 0
+        : clamp(this.camX, -FIGHT_HALF_WIDTH + halfW, FIGHT_HALF_WIDTH - halfW);
+    this.camZ = clamp(this.camZ, halfH * 0.55, FIGHT_WORLD_HEIGHT - halfH * 0.35);
   }
 
   // ------------------------------------------------------------------ drawing
 
+  private sx(x: number): number {
+    return this.width / 2 + (x - this.camX) * this.scale;
+  }
+
+  private sy(z: number): number {
+    return this.height / 2 - (z - this.camZ) * this.scale;
+  }
+
   private draw(state: ClientMobaState | null): void {
     const ctx = this.ctx!;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.fillStyle = '#163a22';
-    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.clearRect(0, 0, this.width, this.height);
 
     const shakeX = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 2 : 0;
     const shakeY = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 2 : 0;
-
     ctx.save();
-    ctx.translate(this.width / 2 + shakeX, this.height / 2 + shakeY);
-    ctx.scale(this.scale, this.scale);
-    ctx.translate(-this.camX, -this.camZ);
+    ctx.translate(shakeX, shakeY);
 
-    this.drawTerrain();
-    this.drawArenaProps();
-    this.drawBushes();
+    this.drawSky();
+    this.drawBackdrop();
+    this.drawStage();
     if (state) {
+      this.drawShadows(state);
       this.drawProjectiles(state);
       this.drawHeroes(state);
-      this.drawEffects(state);
     }
     this.drawParticles();
+    this.drawExplosionFlash();
     this.drawTexts();
     this.drawAim();
     ctx.restore();
   }
 
-  private drawTerrain(): void {
+  private drawSky(): void {
     const ctx = this.ctx!;
-    const half = MOBA_HALF;
+    const gradient = ctx.createLinearGradient(0, 0, 0, this.height);
+    gradient.addColorStop(0, '#7fd1f0');
+    gradient.addColorStop(0.55, '#ffd9a0');
+    gradient.addColorStop(1, '#f6b26b');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, this.width, this.height);
 
-    ctx.fillStyle = '#2f6b3c';
-    ctx.fillRect(-half, -half, MOBA_WORLD_SIZE, MOBA_WORLD_SIZE);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    for (let i = 0; i < 5; i += 1) {
+      const x = ((i * 233 - this.camX * 8) % (this.width + 320)) - 160;
+      const y = this.height * 0.12 + (i % 2) * 28;
+      roundedRect(ctx, x, y, 110, 26, 13);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = 'rgba(46,110,74,0.28)';
+    ctx.beginPath();
+    ctx.moveTo(0, this.height);
+    for (let x = 0; x <= this.width; x += 70) {
+      const hill = this.height * 0.58 + Math.sin((x + this.camX * 10) / 130) * 26;
+      ctx.lineTo(x, hill);
+    }
+    ctx.lineTo(this.width, this.height);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private drawBackdrop(): void {
+    const ctx = this.ctx!;
     if (imageReady(this.mapImage)) {
       ctx.save();
-      ctx.globalAlpha = 0.58;
-      ctx.drawImage(this.mapImage, -half, -half, MOBA_WORLD_SIZE, MOBA_WORLD_SIZE);
+      ctx.globalAlpha = 0.14;
+      const y = this.sy(FIGHT_WORLD_HEIGHT);
+      const h = this.sy(0) - y;
+      ctx.drawImage(
+        this.mapImage,
+        this.sx(-FIGHT_HALF_WIDTH),
+        y,
+        FIGHT_HALF_WIDTH * 2 * this.scale,
+        h,
+      );
       ctx.restore();
     }
 
-    // Ring festival di tengah: titik temu semua tim.
-    ctx.save();
-    ctx.translate(ARENA_CENTER.x, ARENA_CENTER.z);
-    ctx.fillStyle = 'rgba(120,95,60,0.55)';
-    ctx.beginPath();
-    ctx.arc(0, 0, ARENA_CENTER_RADIUS, 0, TAU);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,213,79,0.75)';
-    ctx.lineWidth = 0.9;
-    ctx.beginPath();
-    ctx.arc(0, 0, ARENA_CENTER_RADIUS, 0, TAU);
-    ctx.stroke();
-    ctx.setLineDash([1.2, 1.2]);
-    ctx.strokeStyle = 'rgba(255,241,180,0.55)';
-    ctx.lineWidth = 0.45;
-    ctx.beginPath();
-    ctx.arc(0, 0, ARENA_CENTER_RADIUS - 2.2, 0, TAU);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(255,213,79,0.9)';
-    ctx.font = 'bold 2.1px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('ARENA PETASAN', 0, -ARENA_CENTER_RADIUS - 2);
-    ctx.restore();
-
-    // Zona lahir/respawn masing-masing tim.
     for (const team of ['team_merah', 'team_putih'] as const) {
-      const spawn = ARENA_SPAWNS[team];
-      ctx.save();
-      ctx.globalAlpha = 0.16;
-      ctx.fillStyle = TEAM_COLOR[team];
-      ctx.beginPath();
-      ctx.arc(spawn.x, spawn.z, ARENA_SPAWN_RADIUS, 0, TAU);
+      const spawn = FIGHT_SPAWNS[team];
+      const x = this.sx(spawn.x);
+      const y = this.sy(0);
+      ctx.fillStyle = team === 'team_merah' ? 'rgba(239,83,80,0.28)' : 'rgba(245,245,245,0.45)';
+      ctx.fillRect(x - 8 * this.scale, y - 10 * this.scale, 16 * this.scale, 10 * this.scale);
+      ctx.strokeStyle = team === 'team_merah' ? '#b71c1c' : '#9e9e9e';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - 8 * this.scale, y - 10 * this.scale, 16 * this.scale, 10 * this.scale);
+    }
+  }
+
+  private drawStage(): void {
+    const ctx = this.ctx!;
+    const groundY = this.sy(FIGHT_GROUND_Z);
+
+    ctx.fillStyle = '#795548';
+    ctx.fillRect(this.sx(-FIGHT_HALF_WIDTH), groundY, FIGHT_HALF_WIDTH * 2 * this.scale, 9 * this.scale);
+    ctx.fillStyle = '#66bb6a';
+    ctx.fillRect(this.sx(-FIGHT_HALF_WIDTH), groundY - 0.35 * this.scale, FIGHT_HALF_WIDTH * 2 * this.scale, 0.7 * this.scale);
+
+    for (const platform of FIGHT_PLATFORMS) {
+      const x = this.sx(platform.x - platform.w / 2);
+      const y = this.sy(platform.z);
+      const w = platform.w * this.scale;
+      const h = 0.9 * this.scale;
+      ctx.fillStyle = '#8d5524';
+      roundedRect(ctx, x, y, w, h, 5);
       ctx.fill();
-      ctx.globalAlpha = 0.7;
-      ctx.strokeStyle = TEAM_COLOR[team];
-      ctx.lineWidth = 0.6;
-      ctx.setLineDash([1.4, 1]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = TEAM_COLOR[team];
-      ctx.font = 'bold 1.5px system-ui, sans-serif';
+      ctx.fillStyle = '#a5d66a';
+      roundedRect(ctx, x, y - 0.25 * this.scale, w, 0.4 * this.scale, 4);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(60,40,20,0.65)';
+      ctx.font = `600 ${Math.max(9, 0.5 * this.scale)}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(team === 'team_merah' ? 'ZONA MERAH' : 'ZONA PUTIH', spawn.x, spawn.z - ARENA_SPAWN_RADIUS - 1.6);
-      ctx.restore();
+      ctx.fillText(platform.label, x + w / 2, y + h + 12);
     }
 
-    ctx.strokeStyle = 'rgba(90,58,32,0.8)';
-    ctx.lineWidth = 1.2;
-    roundedRect(ctx, -half + 1, -half + 1, MOBA_WORLD_SIZE - 2, MOBA_WORLD_SIZE - 2, 5);
+    const centerX = this.sx(0);
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = '#ffd54f';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(centerX, this.sy(FIGHT_GROUND_Z + 5), 4.5 * this.scale, Math.PI, TAU);
     ctx.stroke();
+    ctx.restore();
   }
 
-  private drawBushes(): void {
+  private drawShadows(state: ClientMobaState): void {
     const ctx = this.ctx!;
-    const localInside = (x: number, z: number, r: number): boolean =>
-      this.hasLocal && Math.hypot(this.localX - x, this.localZ - z) <= r + 1;
-
-    for (let i = 0; i < MOBA_BUSHES.length; i += 1) {
-      const bush = MOBA_BUSHES[i]!;
-      const alpha = localInside(bush.x, bush.z, bush.r) ? 0.3 : 0.78;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      for (let j = 0; j < 6; j += 1) {
-        const angle = (hashText(`${i}:${j}`) % 360) * (Math.PI / 180);
-        const dist = bush.r * (0.12 + ((hashText(`${j}:${i}`) % 60) / 100));
-        const px = bush.x + Math.cos(angle) * dist;
-        const pz = bush.z + Math.sin(angle) * dist;
-        ctx.fillStyle = j % 2 === 0 ? '#256b2d' : '#3d8b3f';
-        ctx.beginPath();
-        ctx.arc(px, pz, bush.r * 0.38, 0, TAU);
-        ctx.fill();
-      }
-      ctx.restore();
+    ctx.save();
+    ctx.fillStyle = 'rgba(20,25,20,0.22)';
+    for (const hero of Object.values(state.heroes)) {
+      if (!hero.alive && hero.stocks <= 0) continue;
+      const ground = this.shadowZ(hero);
+      ctx.beginPath();
+      ctx.ellipse(this.sx(hero.x), this.sy(ground), 1.3 * this.scale, 0.28 * this.scale, 0, 0, TAU);
+      ctx.fill();
     }
+    ctx.restore();
   }
 
-  private isHidden(unit: MobaUnitView): boolean {
-    if (!this.hasLocal || !this.localTeam || unit.team === this.localTeam) return false;
-    return MOBA_BUSHES.some(
-      (bush) =>
-        Math.hypot(unit.x - bush.x, unit.z - bush.z) <= bush.r &&
-        Math.hypot(this.localX - bush.x, this.localZ - bush.z) > bush.r + 1,
-    );
+  private shadowZ(hero: MobaHeroView): number {
+    let surface = FIGHT_GROUND_Z;
+    for (const platform of FIGHT_PLATFORMS) {
+      if (Math.abs(hero.x - platform.x) > platform.w / 2 + 1.1) continue;
+      if (platform.z <= hero.z + 0.1 && platform.z > surface) surface = platform.z;
+    }
+    return surface;
   }
 
-  private drawArenaProps(): void {
+  private drawProjectiles(state: ClientMobaState): void {
     const ctx = this.ctx!;
-    for (const cover of ARENA_COVER) {
+    for (const projectile of Object.values(state.projectiles)) {
+      const x = this.sx(projectile.x);
+      const y = this.sy(projectile.z);
+      const r = Math.max(4, projectile.radius * this.scale);
       ctx.save();
-      ctx.translate(cover.x, cover.z);
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      roundedRect(ctx, -cover.w / 2 + 0.5, -cover.h / 2 + 0.8, cover.w, cover.h, 1);
+      ctx.shadowColor = projectile.color;
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = projectile.color;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
       ctx.fill();
-
-      ctx.fillStyle = cover.id.startsWith('bak') ? '#4f7fa8' : '#8d6e4f';
-      roundedRect(ctx, -cover.w / 2, -cover.h / 2, cover.w, cover.h, 1);
-      ctx.fill();
-      ctx.strokeStyle = cover.id.startsWith('bak') ? '#a8d4ef' : '#c9a86a';
-      ctx.lineWidth = 0.35;
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 2;
       ctx.stroke();
-
-      if (cover.id.startsWith('pos')) {
-        ctx.fillStyle = '#d84315';
-        ctx.beginPath();
-        ctx.moveTo(-cover.w / 2, -cover.h / 2);
-        ctx.lineTo(0, -cover.h / 2 - 1.6);
-        ctx.lineTo(cover.w / 2, -cover.h / 2);
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      ctx.fillStyle = '#fff8e1';
-      ctx.font = 'bold 0.95px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(cover.label, 0, 0.4);
       ctx.restore();
     }
   }
 
   private drawHeroes(state: ClientMobaState): void {
-    for (const unit of Object.values(state.heroes)) {
-      if (this.isHidden(unit)) continue;
-      this.drawHero(unit);
-    }
+    const sorted = Object.values(state.heroes).sort((a, b) => a.z - b.z);
+    for (const hero of sorted) this.drawHero(hero);
   }
 
   private drawHero(hero: MobaHeroView): void {
     const ctx = this.ctx!;
-    const isLocal = hero.id === this.localHeroId;
-    const theme = HEROES[hero.heroId]?.colorTheme ?? '#ffd54f';
-    const walking = hero.anim === 'walk' || hero.anim === 'attack';
-    const bob = walking ? Math.sin(this.elapsedMs / 95 + hashText(hero.id) % 13) * 0.16 : 0;
-    const attack = hero.anim === 'attack' ? 1 + Math.sin(this.elapsedMs / 70) * 0.06 : 1;
+    const x = this.sx(hero.x);
+    const feetY = this.sy(hero.z);
+    const bodyW = 2.2 * this.scale;
+    const bodyH = 2.6 * this.scale;
+    const topY = feetY - bodyH;
+    const eliminated = !hero.alive && hero.stocks <= 0;
+    const respawning = !hero.alive && hero.stocks > 0;
+    const local = hero.id === this.localHeroId && this.hasLocal;
+    const theme = HEROES[hero.heroId]?.colorTheme ?? TEAM_COLOR[hero.team];
 
     ctx.save();
-    ctx.translate(hero.x, hero.z + bob);
+    if (eliminated) ctx.globalAlpha = 0.28;
+    else if (respawning) ctx.globalAlpha = 0.45;
+    else if (this.elapsedMs < hero.hitstunUntil) ctx.globalAlpha = 0.72;
 
-    ctx.fillStyle = 'rgba(0,0,0,0.26)';
-    ctx.beginPath();
-    ctx.ellipse(0.35, 0.7, 1.8, 0.9, 0, 0, TAU);
-    ctx.fill();
-
-    ctx.globalAlpha = hero.alive ? 1 : 0.38;
-    ctx.scale(attack, attack);
-
-    if (hero.anim === 'cast') {
-      ctx.strokeStyle = theme;
-      ctx.globalAlpha = 0.4 + Math.sin(this.elapsedMs / 80) * 0.2;
-      ctx.lineWidth = 0.4;
-      ctx.beginPath();
-      ctx.arc(0, 0, 2.5, 0, TAU);
-      ctx.stroke();
-      ctx.globalAlpha = hero.alive ? 1 : 0.38;
-    }
-
-    const image = this.portraitFor(hero.heroId);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(0, 0, 1.7, 0, TAU);
-    ctx.clip();
-    ctx.fillStyle = theme;
-    ctx.fillRect(-1.8, -1.8, 3.6, 3.6);
-    if (imageReady(image)) this.drawCover(image, -1.7, -1.7, 3.4, 3.4);
-    ctx.restore();
-
-    ctx.strokeStyle = TEAM_COLOR[hero.team];
-    ctx.lineWidth = isLocal ? 0.46 : 0.32;
-    ctx.beginPath();
-    ctx.arc(0, 0, 1.72, 0, TAU);
-    ctx.stroke();
-    if (isLocal) {
-      ctx.setLineDash([0.5, 0.4]);
+    if (local) {
       ctx.strokeStyle = '#ffd54f';
-      ctx.lineWidth = 0.28;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(0, 0, 2.25, 0, TAU);
+      ctx.ellipse(x, feetY - 0.1 * this.scale, 1.6 * this.scale, 0.45 * this.scale, 0, 0, TAU);
       ctx.stroke();
-      ctx.setLineDash([]);
     }
 
-    // Penunjuk arah hadap.
-    ctx.save();
-    ctx.rotate(hero.facing);
-    ctx.fillStyle = isLocal ? '#ffd54f' : TEAM_COLOR[hero.team];
-    ctx.beginPath();
-    ctx.moveTo(2.5, 0);
-    ctx.lineTo(1.9, -0.45);
-    ctx.lineTo(1.9, 0.45);
-    ctx.closePath();
+    ctx.fillStyle = hero.team === 'team_merah' ? '#c62828' : '#eceff1';
+    roundedRect(ctx, x - bodyW / 2, topY, bodyW, bodyH, 0.55 * this.scale);
     ctx.fill();
-    ctx.restore();
+    ctx.strokeStyle = TEAM_COLOR[hero.team];
+    ctx.lineWidth = 3;
+    ctx.stroke();
 
-    const ratio = hero.maxHp > 0 ? clamp(hero.hp / hero.maxHp, 0, 1) : 0;
-    this.drawHpBar(-1.9, -2.8, 3.8, ratio, TEAM_COLOR[hero.team]);
-    ctx.fillStyle = '#fff8e1';
-    ctx.font = 'bold 0.95px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${hero.name} · Lv.${hero.level}`, 0, -3.3);
-
-    if (!hero.alive) {
-      ctx.fillStyle = '#ffd54f';
-      ctx.fillText(`${Math.ceil(hero.respawnIn / 1000)}s`, 0, 0.4);
-    }
-    ctx.restore();
-  }
-
-  private drawProjectiles(state: ClientMobaState): void {
-    for (const projectile of Object.values(state.projectiles)) {
-      this.drawProjectile(projectile);
-    }
-  }
-
-  private drawProjectile(projectile: MobaProjectileView): void {
-    const ctx = this.ctx!;
-    const speed = Math.hypot(projectile.vx, projectile.vz);
-    ctx.save();
-    if (projectile.aoeRadius > 0) {
-      ctx.strokeStyle = projectile.color || TEAM_COLOR[projectile.team];
-      ctx.globalAlpha = 0.35;
-      ctx.lineWidth = 0.35;
-      ctx.beginPath();
-      ctx.arc(projectile.x, projectile.z, projectile.aoeRadius, 0, TAU);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    if (speed > 0.01) {
-      ctx.strokeStyle = projectile.color || TEAM_COLOR[projectile.team];
-      ctx.lineWidth = Math.max(0.35, projectile.radius);
-      ctx.globalAlpha = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(projectile.x, projectile.z);
-      ctx.lineTo(
-        projectile.x - (projectile.vx / speed) * 2.2,
-        projectile.z - (projectile.vz / speed) * 2.2,
-      );
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    ctx.fillStyle = projectile.color || TEAM_COLOR[projectile.team];
-    ctx.beginPath();
-    ctx.arc(projectile.x, projectile.z, Math.max(0.42, projectile.radius), 0, TAU);
+    ctx.fillStyle = theme;
+    roundedRect(ctx, x - bodyW / 2, topY + bodyH * 0.58, bodyW, bodyH * 0.42, 0.35 * this.scale);
     ctx.fill();
-    ctx.fillStyle = '#fff8e1';
-    ctx.beginPath();
-    ctx.arc(projectile.x - 0.12, projectile.z - 0.12, Math.max(0.14, projectile.radius * 0.35), 0, TAU);
-    ctx.fill();
-    ctx.restore();
-  }
 
-  private drawEffects(state: ClientMobaState): void {
-    const ctx = this.ctx!;
-    for (const effect of Object.values(state.effects)) {
-      const born = this.effectBorn.get(effect.id) ?? this.elapsedMs;
-      const progress = clamp((this.elapsedMs - born) / Math.max(120, effect.ttlMs), 0, 1);
-      if (progress >= 1) continue;
-      const color = effect.color || '#ffb74d';
-      const alpha = 1 - progress;
+    const portrait = this.portraitFor(hero.heroId);
+    const faceR = 0.72 * this.scale;
+    if (imageReady(portrait)) {
       ctx.save();
-      ctx.globalAlpha = alpha * 0.65;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 0.5 + alpha * 0.5;
       ctx.beginPath();
-      ctx.arc(effect.x, effect.z, effect.radius * (0.35 + progress * 0.9), 0, TAU);
-      ctx.stroke();
-
-      if ((effect.kind === 'explosion' || effect.kind === 'boss_spawn') && imageReady(this.explosionImage)) {
-        ctx.globalAlpha = alpha * 0.8;
-        const size = effect.radius * (0.9 + progress * 0.6);
-        ctx.drawImage(this.explosionImage, effect.x - size, effect.z - size, size * 2, size * 2);
-      }
+      ctx.arc(x, topY + bodyH * 0.34, faceR, 0, TAU);
+      ctx.clip();
+      ctx.drawImage(portrait, x - faceR, topY + bodyH * 0.34 - faceR, faceR * 2, faceR * 2);
       ctx.restore();
     }
-  }
+    ctx.strokeStyle = '#fffde7';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, topY + bodyH * 0.34, faceR, 0, TAU);
+    ctx.stroke();
 
-  private drawParticles(): void {
-    const ctx = this.ctx!;
-    for (const particle of this.particles) {
-      ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
-      ctx.fillStyle = particle.color;
+    ctx.fillStyle = '#111827';
+    const arrowX = x + hero.facing * (bodyW / 2 + 0.35 * this.scale);
+    ctx.beginPath();
+    ctx.moveTo(arrowX, feetY - bodyH * 0.55);
+    ctx.lineTo(arrowX + hero.facing * 0.55 * this.scale, feetY - bodyH * 0.42);
+    ctx.lineTo(arrowX, feetY - bodyH * 0.29);
+    ctx.closePath();
+    ctx.fill();
+
+    const barW = 2.6 * this.scale;
+    const barY = topY - 0.75 * this.scale;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(x - barW / 2, barY, barW, 0.32 * this.scale);
+    const ratio = clamp(hero.hp / Math.max(1, hero.maxHp), 0, 1);
+    ctx.fillStyle = ratio < 0.3 ? '#ff5252' : '#69f0ae';
+    ctx.fillRect(x - barW / 2, barY, barW * ratio, 0.32 * this.scale);
+
+    for (let i = 0; i < hero.maxStocks; i += 1) {
+      ctx.fillStyle = i < hero.stocks ? '#ffd54f' : 'rgba(255,255,255,0.25)';
       ctx.beginPath();
-      ctx.arc(particle.x, particle.z, particle.size, 0, TAU);
+      ctx.arc(x - (hero.maxStocks - 1) * 0.32 * this.scale + i * 0.64 * this.scale, barY - 0.45 * this.scale, 0.2 * this.scale, 0, TAU);
       ctx.fill();
     }
-    ctx.globalAlpha = 1;
-  }
 
-  private drawTexts(): void {
-    const ctx = this.ctx!;
+    ctx.font = `600 ${Math.max(9, 0.42 * this.scale)}px sans-serif`;
     ctx.textAlign = 'center';
-    ctx.font = 'bold 1.5px system-ui, sans-serif';
-    ctx.lineWidth = 0.32;
-    for (const text of this.texts) {
-      const progress = 1 - text.life / text.maxLife;
-      ctx.globalAlpha = clamp(text.life / text.maxLife, 0, 1);
-      ctx.fillStyle = text.color;
-      ctx.strokeStyle = 'rgba(10,20,14,0.9)';
-      const y = text.z - progress * 2.2;
-      ctx.strokeText(text.text, text.x, y);
-      ctx.fillText(text.text, text.x, y);
-    }
-    ctx.globalAlpha = 1;
-  }
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(hero.name, x, barY - 0.85 * this.scale);
 
-  private drawAim(): void {
-    if (!this.aimVisible) return;
-    const ctx = this.ctx!;
-    ctx.save();
-    ctx.translate(this.aimX, this.aimZ);
-    ctx.rotate(this.elapsedMs * 0.0012);
-    ctx.strokeStyle = 'rgba(255,213,79,0.85)';
-    ctx.lineWidth = 0.32;
-    ctx.setLineDash([0.8, 0.6]);
-    ctx.beginPath();
-    ctx.arc(0, 0, 2.1, 0, TAU);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    for (let i = 0; i < 4; i += 1) {
-      const angle = (i / 4) * TAU;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(angle) * 2.7, Math.sin(angle) * 2.7);
-      ctx.lineTo(Math.cos(angle) * 3.4, Math.sin(angle) * 3.4);
-      ctx.stroke();
+    if (hero.combo > 1 && hero.id === this.localHeroId) {
+      ctx.fillStyle = '#ffeb3b';
+      ctx.font = `800 ${Math.max(11, 0.55 * this.scale)}px sans-serif`;
+      ctx.fillText(`${hero.combo}x COMBO`, x, topY - 1.6 * this.scale);
     }
-    ctx.fillStyle = '#ffd54f';
-    ctx.beginPath();
-    ctx.arc(0, 0, 0.35, 0, TAU);
-    ctx.fill();
+
+    if (respawning) {
+      ctx.fillStyle = '#0f172a';
+      ctx.font = `700 ${Math.max(10, 0.5 * this.scale)}px sans-serif`;
+      ctx.fillText(`RESPAWN ${Math.ceil(hero.respawnIn / 1000)}s`, x, topY - 1.3 * this.scale);
+    }
     ctx.restore();
-  }
-
-  private drawHpBar(x: number, y: number, width: number, ratio: number, color: string): void {
-    const ctx = this.ctx!;
-    ctx.fillStyle = 'rgba(12,20,16,0.8)';
-    roundedRect(ctx, x - 0.12, y - 0.12, width + 0.24, 0.62, 0.2);
-    ctx.fill();
-    ctx.fillStyle = ratio < 0.3 ? '#ff5252' : color;
-    roundedRect(ctx, x, y, Math.max(0.01, width * ratio), 0.38, 0.16);
-    ctx.fill();
-  }
-
-  private drawCover(
-    image: HTMLImageElement,
-    dx: number,
-    dy: number,
-    dw: number,
-    dh: number,
-  ): void {
-    const ctx = this.ctx!;
-    const iw = image.naturalWidth;
-    const ih = image.naturalHeight;
-    const scale = Math.max(dw / iw, dh / ih);
-    const sw = dw / scale;
-    const sh = dh / scale;
-    ctx.drawImage(image, (iw - sw) / 2, (ih - sh) / 2, sw, sh, dx, dy, dw, dh);
   }
 
   private portraitFor(heroId: string): HTMLImageElement {
@@ -771,8 +659,75 @@ class CanvasMobaRenderer implements MobaRenderer {
     }
     return image;
   }
+
+  private drawParticles(): void {
+    const ctx = this.ctx!;
+    for (const particle of this.particles) {
+      const alpha = clamp(particle.life / particle.maxLife, 0, 1);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = particle.color;
+      ctx.beginPath();
+      ctx.arc(this.sx(particle.x), this.sy(particle.z), particle.size * this.scale, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  private drawExplosionFlash(): void {
+    if (!this.explosionFlash || !imageReady(this.explosionImage)) return;
+    const ctx = this.ctx!;
+    const progress = 1 - this.explosionFlash.life / this.explosionFlash.maxLife;
+    const size = this.explosionFlash.radius * 2.6 * this.scale * (0.6 + progress * 0.7);
+    const x = this.sx(this.explosionFlash.x) - size / 2;
+    const y = this.sy(this.explosionFlash.z) - size / 2;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 0.9 - progress * 0.9);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(this.explosionImage, x, y, size, size);
+    ctx.restore();
+  }
+
+  private drawTexts(): void {
+    const ctx = this.ctx!;
+    ctx.textAlign = 'center';
+    for (const text of this.texts) {
+      const alpha = clamp(text.life / text.maxLife, 0, 1);
+      ctx.globalAlpha = alpha;
+      ctx.font = `900 ${Math.max(13, 0.7 * this.scale)}px sans-serif`;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(15,23,42,0.8)';
+      ctx.strokeText(text.text, this.sx(text.x), this.sy(text.z));
+      ctx.fillStyle = text.color;
+      ctx.fillText(text.text, this.sx(text.x), this.sy(text.z));
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  private drawAim(): void {
+    if (!this.aimVisible) return;
+    const ctx = this.ctx!;
+    const x = this.sx(this.aimX);
+    const y = this.sy(this.aimZ);
+    ctx.save();
+    ctx.strokeStyle = '#fff176';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 9, 0, TAU);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - 14, y);
+    ctx.lineTo(x - 4, y);
+    ctx.moveTo(x + 4, y);
+    ctx.lineTo(x + 14, y);
+    ctx.moveTo(x, y - 14);
+    ctx.lineTo(x, y - 4);
+    ctx.moveTo(x, y + 4);
+    ctx.lineTo(x, y + 14);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 export function createMobaRenderer(): MobaRenderer {
-  return new CanvasMobaRenderer();
+  return new CanvasFightRenderer();
 }

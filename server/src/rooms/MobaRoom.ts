@@ -1,19 +1,18 @@
 import {
-  ARENA_BALANCE,
-  ARENA_COVER,
+  FIGHT_BALANCE,
   MOBA_BALANCE,
-  MOBA_BOUNDS,
   MOBA_MESSAGES,
   PATCH_RATE_MS,
   ROOM_MODES,
-  arenaSpawnPoint,
-  distance,
+  clampFightX,
+  fightSpawnPoint,
   heroStatsAtThr,
   itemStatTotals,
+  landingPlatform,
   levelForXp,
   otherTeam,
-  resolveArenaCollision,
   scoreKey,
+  standingPlatform,
   type HeroDefinition,
   type ItemStats,
   type MobaBuyMessage,
@@ -28,13 +27,13 @@ import {
 } from '@pp/shared';
 import { Room, type Client } from 'colyseus';
 import { decideArenaBot, randomBotHeroId, randomBotName } from '../bot.js';
-import { HEROES, HERO_LIST, ITEMS } from '../config.js';
+import { FIGHT_HERO_IDS, FIGHT_HERO_LIST, HEROES, ITEMS } from '../config.js';
 import { EffectSchema, HeroSchema, MobaState, ProjectileSchema } from '../schema.js';
 
 const TEAM_IDS: readonly TeamId[] = ['team_merah', 'team_putih'];
 const SKILL_KEYS: readonly MobaSkillKey[] = ['basic', 'skill1', 'skill2', 'ultimate'];
 const MAX_ITEMS = 6;
-const HERO_COLLISION_RADIUS = 1.2;
+const HERO_RADIUS = 1.1;
 const LEVEL_HP_BONUS = 28;
 const LEVEL_DAMAGE_BONUS = 5;
 const ASSIST_WINDOW_MS = 8000;
@@ -44,6 +43,8 @@ type ProjectileKind = 'basic' | 'skill';
 interface MoveInput {
   dx: number;
   dz: number;
+  jump: boolean;
+  dash: boolean;
   aimX: number;
   aimZ: number;
 }
@@ -57,6 +58,8 @@ interface HeroRuntime {
   attackCooldownMs: number;
   itemStats: ItemStats;
   move: MoveInput;
+  prevJump: boolean;
+  prevDash: boolean;
   readyAt: Record<MobaSkillKey, number>;
   respawnAt: number;
   protectedUntil: number;
@@ -65,10 +68,14 @@ interface HeroRuntime {
   damagers: Map<string, number>;
   animUntil: number;
   disconnected: boolean;
+  lastBasicAt: number;
+  comboResetAt: number;
+  dashReadyAt: number;
 }
 
 interface ProjectileRuntime {
   kind: ProjectileKind;
+  knockback: number;
   skillType?: string;
 }
 
@@ -89,6 +96,7 @@ interface SpawnProjectileInput {
   stunMs?: number;
   slowPercent?: number;
   slowMs?: number;
+  knockback?: number;
   skillType?: string;
 }
 
@@ -96,6 +104,8 @@ interface DamageOptions {
   stunMs?: number;
   slowPercent?: number;
   slowMs?: number;
+  knockback?: number;
+  dirX?: number;
 }
 
 function finite(value: unknown, fallback = 0): number {
@@ -103,12 +113,15 @@ function finite(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function angleDifference(a: number, b: number): number {
-  const diff = Math.abs(a - b);
-  return diff > Math.PI ? Math.PI * 2 - diff : diff;
+function damp(current: number, target: number, lambda: number, dt: number): number {
+  return current + (target - current) * (1 - Math.exp(-lambda * dt));
 }
 
-/** Arena PvP 2D: semua mode memakai satu arena terbuka, kemenangan dari skor kill. */
+function sign(value: number): number {
+  return value >= 0 ? 1 : -1;
+}
+
+/** Side-view fighting: 3 nyawa per hero, best-of-3, bots mengisi slot kosong. */
 export class MobaRoom extends Room<{
   state: MobaState;
   metadata: { mode: RoomMode; humans: number };
@@ -119,6 +132,8 @@ export class MobaRoom extends Room<{
   private heroRuntime = new Map<string, HeroRuntime>();
   private projectileRuntime = new Map<string, ProjectileRuntime>();
   private elapsedMs = 0;
+  private roundElapsedMs = 0;
+  private intermissionLeftMs = 0;
   private ending = false;
   private entitySequence = 0;
   private botSequence = 0;
@@ -136,7 +151,8 @@ export class MobaRoom extends Room<{
     this.state = new MobaState();
     this.state.mode = this.mode;
     this.state.phase = 'playing';
-    this.state.timeLeft = ARENA_BALANCE.matchSeconds;
+    this.state.round = 1;
+    this.state.timeLeft = FIGHT_BALANCE.roundSeconds;
     this.state.bossSpawnIn = 0;
     this.metadata = { mode: this.mode, humans: 0 };
 
@@ -158,9 +174,11 @@ export class MobaRoom extends Room<{
     const team = this.pickHumanTeam();
     const requestedHeroId = options.loadout?.heroId;
     const heroId =
-      typeof requestedHeroId === 'string' && HEROES[requestedHeroId]
+      typeof requestedHeroId === 'string' &&
+      FIGHT_HERO_IDS.includes(requestedHeroId as (typeof FIGHT_HERO_IDS)[number]) &&
+      HEROES[requestedHeroId]
         ? requestedHeroId
-        : HERO_LIST[0]!.id;
+        : FIGHT_HERO_LIST[0]!.id;
     const thrLevel = Math.max(0, Math.floor(finite(options.loadout?.thrLevel)));
     const hero = this.createHero(
       client.sessionId,
@@ -226,7 +244,7 @@ export class MobaRoom extends Room<{
   }
 
   private teamFacing(team: TeamId): number {
-    return team === 'team_merah' ? 0 : Math.PI;
+    return team === 'team_merah' ? 1 : -1;
   }
 
   private createHero(
@@ -237,11 +255,11 @@ export class MobaRoom extends Room<{
     thrLevel: number,
     isBot: boolean,
   ): HeroSchema {
-    const definition = HEROES[heroId] ?? HERO_LIST[0]!;
+    const definition = HEROES[heroId] ?? FIGHT_HERO_LIST[0]!;
     const thrStats = heroStatsAtThr(definition, thrLevel);
     let existing = 0;
     for (const hero of this.state.heroes.values()) if (hero.team === team) existing += 1;
-    const spawn = arenaSpawnPoint(team, existing, this.teamSize);
+    const spawn = fightSpawnPoint(team, existing, this.teamSize);
 
     const hero = new HeroSchema();
     hero.id = id;
@@ -258,6 +276,15 @@ export class MobaRoom extends Room<{
     hero.level = 1;
     hero.anim = 'idle';
     hero.items.clear();
+    hero.vx = 0;
+    hero.vz = 0;
+    hero.stocks = FIGHT_BALANCE.stocksPerHero;
+    hero.maxStocks = FIGHT_BALANCE.stocksPerHero;
+    hero.grounded = true;
+    hero.jumpCount = 0;
+    hero.combo = 0;
+    hero.hitstunUntil = 0;
+    hero.dashUntil = 0;
 
     const runtime: HeroRuntime = {
       definition,
@@ -270,17 +297,24 @@ export class MobaRoom extends Room<{
       move: {
         dx: 0,
         dz: 0,
-        aimX: spawn.x + Math.cos(hero.facing),
-        aimZ: spawn.z + Math.sin(hero.facing),
+        jump: false,
+        dash: false,
+        aimX: spawn.x + this.teamFacing(team) * 4,
+        aimZ: spawn.z + 1,
       },
+      prevJump: false,
+      prevDash: false,
       readyAt: { basic: 0, skill1: 0, skill2: 0, ultimate: 0 },
       respawnAt: 0,
-      protectedUntil: this.elapsedMs + ARENA_BALANCE.spawnProtectionMs,
+      protectedUntil: this.elapsedMs + FIGHT_BALANCE.spawnProtectionMs,
       speedBoostMultiplier: 1,
       slowPercent: 0,
       damagers: new Map(),
       animUntil: 0,
       disconnected: false,
+      lastBasicAt: -9999,
+      comboResetAt: 0,
+      dashReadyAt: 0,
     };
 
     this.heroRuntime.set(id, runtime);
@@ -332,17 +366,19 @@ export class MobaRoom extends Room<{
   private onMove(client: Client, message: MobaMoveMessage): void {
     const hero = this.state.heroes.get(client.sessionId);
     const runtime = this.heroRuntime.get(client.sessionId);
-    if (!hero || !runtime || !hero.alive) return;
+    if (!hero || !runtime) return;
 
     const msg = message as Partial<MobaMoveMessage> | undefined;
     const rawDx = finite(msg?.dx);
-    const rawDz = finite(msg?.dz);
-    const length = Math.hypot(rawDx, rawDz);
+    const dx = Math.abs(rawDx) < 0.15 ? 0 : sign(rawDx);
+    const jump = msg?.jump === true || finite(msg?.dz) > 0.5;
     runtime.move = {
-      dx: length > 0.001 ? rawDx / length : 0,
-      dz: length > 0.001 ? rawDz / length : 0,
-      aimX: finite(msg?.aimX, hero.x + Math.cos(hero.facing)),
-      aimZ: finite(msg?.aimZ, hero.z + Math.sin(hero.facing)),
+      dx,
+      dz: finite(msg?.dz),
+      jump,
+      dash: msg?.dash === true,
+      aimX: finite(msg?.aimX, hero.x + hero.facing * 4),
+      aimZ: finite(msg?.aimZ, hero.z + 1),
     };
   }
 
@@ -355,8 +391,8 @@ export class MobaRoom extends Room<{
     this.castSkill(
       hero,
       key,
-      finite(msg?.aimX, hero.x + Math.cos(hero.facing) * 4),
-      finite(msg?.aimZ, hero.z + Math.sin(hero.facing) * 4),
+      finite(msg?.aimX, hero.x + hero.facing * 5),
+      finite(msg?.aimZ, hero.z + 1),
     );
   }
 
@@ -370,26 +406,30 @@ export class MobaRoom extends Room<{
   // -------------------------------------------------------------- simulation
 
   private tick(deltaMs: number): void {
-    if (this.state.phase !== 'playing') return;
+    if (this.state.phase === 'finished') return;
     this.elapsedMs += deltaMs;
     this.state.elapsedMs = this.elapsedMs;
+    const dt = Math.min(deltaMs, 100) / 1000;
+
+    if (this.state.phase === 'intermission') {
+      this.intermissionLeftMs -= deltaMs;
+      this.state.intermissionMs = Math.max(0, this.intermissionLeftMs);
+      this.updateEffects(deltaMs);
+      if (this.intermissionLeftMs <= 0) this.advanceRound();
+      return;
+    }
+
+    if (this.state.phase !== 'playing') return;
+    this.roundElapsedMs += deltaMs;
     this.state.timeLeft = Math.max(
       0,
-      Math.ceil(ARENA_BALANCE.matchSeconds - this.elapsedMs / 1000),
+      Math.ceil(FIGHT_BALANCE.roundSeconds - this.roundElapsedMs / 1000),
     );
-    const dt = Math.min(deltaMs, 100) / 1000;
 
     this.updateHeroes(dt);
     this.updateProjectiles(deltaMs, dt);
     this.updateEffects(deltaMs);
-
-    if (this.state.timeLeft <= 0) this.finishMatch('timeout');
-    else if (
-      this.state.scoreMerah >= ARENA_BALANCE.scoreLimit ||
-      this.state.scorePutih >= ARENA_BALANCE.scoreLimit
-    ) {
-      this.finishMatch('scorelimit');
-    }
+    this.evaluateRound();
   }
 
   private updateHeroes(dt: number): void {
@@ -402,8 +442,10 @@ export class MobaRoom extends Room<{
         runtime.move = {
           dx: finite(intent.dx),
           dz: finite(intent.dz),
-          aimX: finite(intent.aimX, hero.x + Math.cos(hero.facing)),
-          aimZ: finite(intent.aimZ, hero.z + Math.sin(hero.facing)),
+          jump: intent.jump,
+          dash: intent.dash,
+          aimX: finite(intent.aimX, hero.x + hero.facing * 4),
+          aimZ: finite(intent.aimZ, hero.z + 1),
         };
         if (intent.skill) this.castSkill(hero, intent.skill, intent.aimX, intent.aimZ);
         if (intent.buyItemId) this.buyItem(hero, intent.buyItemId);
@@ -415,64 +457,136 @@ export class MobaRoom extends Room<{
       hero.cdUltimate = Math.max(0, runtime.readyAt.ultimate - this.elapsedMs);
 
       if (!hero.alive) {
-        const remaining = Math.max(0, runtime.respawnAt - this.elapsedMs);
-        hero.respawnIn = remaining;
-        if (remaining <= 0) this.respawnHero(hero, runtime);
+        hero.respawnIn = Math.max(0, runtime.respawnAt - this.elapsedMs);
+        if (runtime.respawnAt > 0 && hero.respawnIn <= 0 && hero.stocks > 0) {
+          this.respawnHero(hero, runtime);
+        }
         continue;
       }
 
-      let moving = false;
-      const stunned = hero.stunUntil > this.elapsedMs;
-      if (!stunned) {
-        let speed = runtime.moveSpeed + runtime.itemStats.moveSpeed;
-        if (hero.speedBoostUntil > this.elapsedMs) speed *= runtime.speedBoostMultiplier;
-        if (hero.slowUntil > this.elapsedMs) speed *= Math.max(0.2, 1 - runtime.slowPercent);
-        const length = Math.hypot(runtime.move.dx, runtime.move.dz);
-        if (length > 0.001) {
-          const step = speed * dt;
-          const next = resolveArenaCollision(
-            hero.x + (runtime.move.dx / length) * step,
-            hero.z + (runtime.move.dz / length) * step,
-            HERO_COLLISION_RADIUS,
-          );
-          hero.x = next.x;
-          hero.z = next.z;
-          const aimX = runtime.move.aimX - hero.x;
-          const aimZ = runtime.move.aimZ - hero.z;
-          if (Math.hypot(aimX, aimZ) > 0.1) hero.facing = Math.atan2(aimZ, aimX);
-          else hero.facing = Math.atan2(runtime.move.dz, runtime.move.dx);
-          moving = true;
+      const disabled =
+        hero.hitstunUntil > this.elapsedMs || hero.stunUntil > this.elapsedMs;
+      const dashing = hero.dashUntil > this.elapsedMs;
+
+      if (runtime.move.jump && !runtime.prevJump && !disabled) this.tryJump(hero);
+      if (runtime.move.dash && !runtime.prevDash && !disabled) this.tryDash(hero, runtime);
+
+      const aimDx = runtime.move.aimX - hero.x;
+      if (Math.abs(aimDx) > 0.2) hero.facing = sign(aimDx);
+      else if (runtime.move.dx !== 0) hero.facing = sign(runtime.move.dx);
+
+      let speed = runtime.moveSpeed + runtime.itemStats.moveSpeed;
+      if (hero.speedBoostUntil > this.elapsedMs) speed *= runtime.speedBoostMultiplier;
+      if (hero.slowUntil > this.elapsedMs) speed *= Math.max(0.2, 1 - runtime.slowPercent);
+
+      if (dashing) {
+        hero.vx = hero.facing * FIGHT_BALANCE.dashSpeed;
+      } else if (disabled) {
+        hero.vx = damp(hero.vx, 0, 4, dt);
+      } else {
+        const target = runtime.move.dx * speed;
+        hero.vx = damp(hero.vx, target, hero.grounded ? 14 : 5, dt);
+      }
+      hero.vx = Math.max(-FIGHT_BALANCE.dashSpeed, Math.min(FIGHT_BALANCE.dashSpeed, hero.vx));
+
+      if (!hero.grounded || hero.vz > 0) {
+        hero.vz = Math.max(
+          -FIGHT_BALANCE.maxFallSpeed,
+          hero.vz - FIGHT_BALANCE.gravity * dt,
+        );
+      }
+
+      const previousZ = hero.z;
+      hero.x = clampFightX(hero.x + hero.vx * dt, HERO_RADIUS);
+      hero.z += hero.vz * dt;
+
+      if (hero.z <= 0) {
+        hero.z = 0;
+        hero.vz = 0;
+        hero.grounded = true;
+        hero.jumpCount = 0;
+      } else {
+        const platform = landingPlatform(hero.x, previousZ, hero.z, HERO_RADIUS);
+        if (platform && hero.vz <= 0) {
+          hero.z = platform.z;
+          hero.vz = 0;
+          hero.grounded = true;
+          hero.jumpCount = 0;
+        } else {
+          hero.grounded = standingPlatform(hero.x, hero.z, HERO_RADIUS) !== null;
         }
       }
+
+      runtime.prevJump = runtime.move.jump;
+      runtime.prevDash = runtime.move.dash;
+      hero.vx = Math.round(hero.vx * 1000) / 1000;
+      hero.vz = Math.round(hero.vz * 1000) / 1000;
 
       if (runtime.itemStats.hpRegen > 0 && hero.hp < hero.maxHp) {
         hero.hp = Math.min(hero.maxHp, hero.hp + runtime.itemStats.hpRegen * dt);
       }
-      if (this.elapsedMs >= runtime.animUntil) hero.anim = moving ? 'walk' : 'idle';
+
+      if (this.elapsedMs >= runtime.animUntil) {
+        hero.anim = disabled ? 'hurt' : dashing ? 'dash' : !hero.grounded ? 'jump' : Math.abs(hero.vx) > 0.6 ? 'walk' : 'idle';
+      }
     }
+  }
+
+  private tryJump(hero: HeroSchema): void {
+    if (hero.grounded && hero.jumpCount === 0) {
+      hero.vz = FIGHT_BALANCE.jumpSpeed;
+      hero.grounded = false;
+      hero.jumpCount = 1;
+      return;
+    }
+    if (!hero.grounded && hero.jumpCount === 1) {
+      hero.vz = FIGHT_BALANCE.doubleJumpSpeed;
+      hero.jumpCount = 2;
+      return;
+    }
+  }
+
+  private tryDash(hero: HeroSchema, runtime: HeroRuntime): void {
+    if (this.elapsedMs < runtime.dashReadyAt) return;
+    runtime.dashReadyAt = this.elapsedMs + FIGHT_BALANCE.dashCooldownMs;
+    hero.dashUntil = this.elapsedMs + FIGHT_BALANCE.dashMs;
+    hero.vx = hero.facing * FIGHT_BALANCE.dashSpeed;
+    if (hero.grounded) hero.vz = Math.max(hero.vz, 2);
+    this.addEffect('dash', hero.x, hero.z, 2.4, FIGHT_BALANCE.effectTtlMs, '#8d6e63');
   }
 
   private respawnHero(hero: HeroSchema, runtime: HeroRuntime): void {
     let existing = 0;
     for (const other of this.state.heroes.values()) if (other.team === hero.team) existing += 1;
-    const spawn = arenaSpawnPoint(hero.team, existing % this.teamSize, this.teamSize);
+    const spawn = fightSpawnPoint(hero.team, existing % this.teamSize, this.teamSize);
     hero.x = spawn.x;
     hero.z = spawn.z;
+    hero.vx = 0;
+    hero.vz = 0;
     hero.facing = this.teamFacing(hero.team);
     hero.hp = this.maxHpFor(hero, runtime);
     hero.maxHp = hero.hp;
     hero.alive = true;
+    hero.grounded = true;
+    hero.jumpCount = 0;
+    hero.combo = 0;
     hero.anim = 'idle';
     hero.respawnIn = 0;
+    hero.hitstunUntil = 0;
+    hero.dashUntil = 0;
     runtime.respawnAt = 0;
-    runtime.protectedUntil = this.elapsedMs + ARENA_BALANCE.spawnProtectionMs;
+    runtime.protectedUntil = this.elapsedMs + FIGHT_BALANCE.spawnProtectionMs;
     runtime.damagers.clear();
     runtime.animUntil = 0;
+    runtime.prevJump = true;
+    runtime.prevDash = true;
     runtime.move = {
       dx: 0,
       dz: 0,
-      aimX: spawn.x + Math.cos(hero.facing),
-      aimZ: spawn.z + Math.sin(hero.facing),
+      jump: false,
+      dash: false,
+      aimX: spawn.x + this.teamFacing(hero.team) * 4,
+      aimZ: spawn.z + 1,
     };
   }
 
@@ -481,55 +595,58 @@ export class MobaRoom extends Room<{
   private castSkill(hero: HeroSchema, key: MobaSkillKey, aimX: number, aimZ: number): void {
     const runtime = this.heroRuntime.get(hero.id);
     if (!runtime || !hero.alive || this.state.phase !== 'playing') return;
+    if (hero.hitstunUntil > this.elapsedMs) return;
     if (hero.level < (MOBA_BALANCE.skillUnlockLevel[key] ?? 1)) return;
     if (this.elapsedMs < runtime.readyAt[key]) return;
 
-    const targetX = finite(aimX, hero.x + Math.cos(hero.facing) * 4);
-    const targetZ = finite(aimZ, hero.z + Math.sin(hero.facing) * 4);
+    const targetX = finite(aimX, hero.x + hero.facing * 5);
+    const targetZ = finite(aimZ, hero.z + 1);
     const dx = targetX - hero.x;
     const dz = targetZ - hero.z;
-    const length = Math.hypot(dx, dz);
-    const dirX = length > 0.001 ? dx / length : Math.cos(hero.facing);
-    const dirZ = length > 0.001 ? dz / length : Math.sin(hero.facing);
-    hero.facing = Math.atan2(dirZ, dirX);
+    if (Math.abs(dx) > 0.2) hero.facing = sign(dx);
+    const dirX = hero.facing;
+    const horizontalLength = Math.abs(dx) > 0.001 ? Math.abs(dx) : 1;
+    const dirZ = Math.max(-1, Math.min(1, dz / horizontalLength));
 
     if (key === 'basic') {
       const speedFactor = 1 + Math.max(0, runtime.itemStats.attackSpeedPercent);
       runtime.readyAt.basic = this.elapsedMs + runtime.attackCooldownMs / speedFactor;
-      this.setHeroAnim(hero, 'attack', 220);
-      const damage = this.attackDamageFor(hero, runtime) + runtime.itemStats.bonusDamage;
-      this.addEffect(
-        'hit',
-        hero.x + dirX * 1.5,
-        hero.z + dirZ * 1.5,
-        2,
-        ARENA_BALANCE.effectTtlMs,
-        runtime.definition.colorTheme,
-      );
+      this.setHeroAnim(hero, 'attack', 180);
+
+      if (this.elapsedMs - runtime.lastBasicAt <= FIGHT_BALANCE.comboWindowMs) {
+        hero.combo = Math.min(3, hero.combo + 1);
+      } else {
+        hero.combo = 1;
+      }
+      runtime.lastBasicAt = this.elapsedMs;
+      runtime.comboResetAt = this.elapsedMs + FIGHT_BALANCE.comboResetMs;
+
+      const comboScale = 1 + (hero.combo - 1) * FIGHT_BALANCE.comboDamageStep;
+      const damage = (this.attackDamageFor(hero, runtime) + runtime.itemStats.bonusDamage) * comboScale;
+      const hitX = hero.x + dirX * Math.min(runtime.attackRange, 7) * 0.6;
+      this.addEffect('hit', hitX, hero.z + 1.2, 2, FIGHT_BALANCE.effectTtlMs, runtime.definition.colorTheme);
+
       if (runtime.attackRange > 4) {
         this.spawnProjectile({
           ownerId: hero.id,
           team: hero.team,
           x: hero.x,
-          z: hero.z,
+          z: hero.z + 1.3,
           aimX: hero.x + dirX * runtime.attackRange,
-          aimZ: hero.z + dirZ * runtime.attackRange,
+          aimZ: hero.z + 1.3 + dirZ * 2,
           damage,
-          radius: 0.9,
+          radius: 0.8,
           aoeRadius: 0.9,
           color: runtime.definition.colorTheme,
           kind: 'basic',
-          ttlMs: Math.max(250, (runtime.attackRange / ARENA_BALANCE.projectileSpeed) * 1000),
-          offset: 1.2,
+          ttlMs: Math.max(260, (runtime.attackRange / FIGHT_BALANCE.projectileSpeed) * 1000),
+          offset: 1,
+          knockback: 0.8 * comboScale,
         });
       } else {
-        const target = this.findNearestEnemyHero(
-          hero.x + dirX * runtime.attackRange * 0.5,
-          hero.z + dirZ * runtime.attackRange * 0.5,
-          runtime.attackRange + 1,
-          hero.team,
-        );
-        if (target) this.applyDamage(target, damage, hero.id);
+        for (const target of this.enemiesInRadius(hitX, hero.z + 1.2, runtime.attackRange * 0.6 + HERO_RADIUS, hero.team)) {
+          this.applyDamage(target, damage, hero.id, { knockback: 0.9 * comboScale });
+        }
       }
       return;
     }
@@ -545,146 +662,80 @@ export class MobaRoom extends Room<{
 
     switch (skill.type) {
       case 'cone_damage': {
-        const range = Math.max(skill.range, 4);
-        for (const target of this.enemiesInRadius(hero.x, hero.z, range, hero.team)) {
-          const angle = Math.atan2(target.z - hero.z, target.x - hero.x);
-          if (angleDifference(angle, hero.facing) <= Math.PI / 3) {
-            this.applyDamage(target, damage, hero.id);
-          }
+        const range = Math.max(skill.range, 3.5);
+        for (const target of this.enemiesInRadius(hero.x, hero.z + 1, range, hero.team)) {
+          if (sign(target.x - hero.x) !== dirX) continue;
+          if (Math.abs(target.z - hero.z) > 5) continue;
+          this.applyDamage(target, damage, hero.id, { knockback: 1.1 });
         }
-        this.addEffect(
-          'hit',
-          hero.x + dirX * range * 0.5,
-          hero.z + dirZ * range * 0.5,
-          range * 0.7,
-          ARENA_BALANCE.effectTtlMs,
-          color,
-        );
+        this.addEffect('hit', hero.x + dirX * range * 0.5, hero.z + 1.5, range * 0.6, FIGHT_BALANCE.effectTtlMs, color);
         break;
       }
       case 'dash_buff': {
-        const dash = Math.max(skill.range, 8);
-        const destination = resolveArenaCollision(
-          hero.x + dirX * dash,
-          hero.z + dirZ * dash,
-          HERO_COLLISION_RADIUS,
-        );
-        hero.x = destination.x;
-        hero.z = destination.z;
+        hero.dashUntil = this.elapsedMs + Math.max(FIGHT_BALANCE.dashMs, skill.durationMs * 0.25);
+        hero.vx = dirX * FIGHT_BALANCE.dashSpeed * 1.15;
         hero.speedBoostUntil = this.elapsedMs + Math.max(500, skill.durationMs);
         runtime.speedBoostMultiplier = skill.speedBoost > 0 ? skill.speedBoost : 1.5;
-        this.addEffect('heal', hero.x, hero.z, 3, ARENA_BALANCE.effectTtlMs, color);
+        this.addEffect('dash', hero.x, hero.z, 3, FIGHT_BALANCE.effectTtlMs, color);
         break;
       }
       case 'aoe_spin': {
-        for (const target of this.enemiesInRadius(hero.x, hero.z, Math.max(radius, 3), hero.team)) {
-          this.applyDamage(target, damage, hero.id);
+        for (const target of this.enemiesInRadius(hero.x, hero.z + 1, Math.max(radius, 3), hero.team)) {
+          this.applyDamage(target, damage, hero.id, { knockback: 1.6 });
         }
-        this.addEffect(
-          'explosion',
-          hero.x,
-          hero.z,
-          Math.max(radius, 3),
-          ARENA_BALANCE.effectTtlMs,
-          color,
-        );
+        this.addEffect('explosion', hero.x, hero.z + 1, Math.max(radius, 3), FIGHT_BALANCE.effectTtlMs, color);
         break;
       }
       case 'aoe_stun': {
         const center = this.skillCenter(hero, targetX, targetZ, skill.range);
-        for (const target of this.enemiesInRadius(center.x, center.z, radius, hero.team)) {
-          this.applyDamage(target, damage, hero.id, { stunMs: skill.stunMs });
+        for (const target of this.enemiesInRadius(center.x, center.z, Math.max(radius, 2), hero.team)) {
+          this.applyDamage(target, damage, hero.id, { stunMs: skill.stunMs, knockback: 1.2 });
         }
-        this.addEffect(
-          'explosion',
-          center.x,
-          center.z,
-          Math.max(radius, 2),
-          ARENA_BALANCE.effectTtlMs,
-          color,
-        );
+        this.addEffect('explosion', center.x, center.z, Math.max(radius, 2), FIGHT_BALANCE.effectTtlMs, color);
         break;
       }
       case 'aoe_slow': {
         const center = this.skillCenter(hero, targetX, targetZ, skill.range);
-        for (const target of this.enemiesInRadius(center.x, center.z, radius, hero.team)) {
+        for (const target of this.enemiesInRadius(center.x, center.z, Math.max(radius, 2), hero.team)) {
           this.applyDamage(target, damage, hero.id, {
             slowPercent: skill.slowPercent,
             slowMs: skill.durationMs,
+            knockback: 0.6,
           });
         }
-        this.addEffect(
-          'explosion',
-          center.x,
-          center.z,
-          Math.max(radius, 2),
-          ARENA_BALANCE.effectTtlMs,
-          color,
-        );
+        this.addEffect('explosion', center.x, center.z, Math.max(radius, 2), FIGHT_BALANCE.effectTtlMs, color);
         break;
       }
       case 'shockwave_knockback': {
         const center = this.skillCenter(hero, targetX, targetZ, skill.range);
-        const knockback = skill.knockback > 0 ? skill.knockback : 3;
-        for (const target of this.enemiesInRadius(center.x, center.z, radius, hero.team)) {
-          this.applyDamage(target, damage, hero.id);
-          const kx = target.x - center.x;
-          const kz = target.z - center.z;
-          const kLen = Math.hypot(kx, kz) || 1;
-          const pushed = resolveArenaCollision(
-            target.x + (kx / kLen) * knockback,
-            target.z + (kz / kLen) * knockback,
-            HERO_COLLISION_RADIUS,
-          );
-          target.x = pushed.x;
-          target.z = pushed.z;
+        for (const target of this.enemiesInRadius(center.x, center.z, Math.max(radius, 2), hero.team)) {
+          this.applyDamage(target, damage, hero.id, { knockback: skill.knockback > 0 ? skill.knockback : 2.5 });
         }
-        this.addEffect('explosion', center.x, center.z, radius, ARENA_BALANCE.effectTtlMs, color);
+        this.addEffect('explosion', center.x, center.z, radius, FIGHT_BALANCE.effectTtlMs, color);
         break;
       }
-      case 'line_skillshot': {
+      case 'line_skillshot':
+      case 'long_range_artillery': {
         const reach = Math.max(skill.range, 8);
         this.spawnProjectile({
           ownerId: hero.id,
           team: hero.team,
           x: hero.x,
-          z: hero.z,
+          z: hero.z + 1.3,
           aimX: hero.x + dirX * reach,
-          aimZ: hero.z + dirZ * reach,
+          aimZ: hero.z + 1.3 + dirZ * reach * 0.35,
           damage,
-          radius: Math.max(0.8, skill.radius),
-          aoeRadius: Math.max(1, radius),
+          radius: Math.max(0.8, skill.radius * 0.5),
+          aoeRadius: Math.max(1.2, radius),
           color,
           kind: 'skill',
           skillType: skill.type,
-          ttlMs: Math.max(300, (reach / ARENA_BALANCE.projectileSpeed) * 1000),
+          ttlMs: Math.max(320, (reach / FIGHT_BALANCE.projectileSpeed) * 1000),
           offset: 1.2,
           stunMs: skill.stunMs,
           slowPercent: skill.slowPercent,
           slowMs: skill.durationMs,
-        });
-        break;
-      }
-      case 'long_range_artillery': {
-        const reach = Math.min(length || skill.range, skill.range);
-        this.spawnProjectile({
-          ownerId: hero.id,
-          team: hero.team,
-          x: hero.x,
-          z: hero.z,
-          aimX: hero.x + dirX * reach,
-          aimZ: hero.z + dirZ * reach,
-          damage,
-          radius: 1.4,
-          aoeRadius: Math.max(2, radius),
-          color,
-          kind: 'skill',
-          skillType: skill.type,
-          ttlMs: Math.max(400, (reach / ARENA_BALANCE.projectileSpeed) * 1000 + 120),
-          offset: 1.5,
-          stunMs: skill.stunMs,
-          slowPercent: skill.slowPercent,
-          slowMs: skill.durationMs,
+          knockback: 1.4,
         });
         break;
       }
@@ -693,14 +744,7 @@ export class MobaRoom extends Room<{
         for (const target of this.enemiesInRadius(center.x, center.z, Math.max(radius, 2), hero.team)) {
           this.applyDamage(target, damage, hero.id);
         }
-        this.addEffect(
-          'explosion',
-          center.x,
-          center.z,
-          Math.max(radius, 2),
-          ARENA_BALANCE.effectTtlMs,
-          color,
-        );
+        this.addEffect('explosion', center.x, center.z, Math.max(radius, 2), FIGHT_BALANCE.effectTtlMs, color);
         break;
       }
     }
@@ -712,13 +756,16 @@ export class MobaRoom extends Room<{
     aimZ: number,
     range: number,
   ): { x: number; z: number } {
-    if (range <= 0) return { x: hero.x, z: hero.z };
+    if (range <= 0) return { x: hero.x, z: hero.z + 1 };
     const dx = aimX - hero.x;
-    const dz = aimZ - hero.z;
+    const dz = aimZ - (hero.z + 1);
     const length = Math.hypot(dx, dz);
-    if (length < 0.001) return { x: hero.x + range, z: hero.z };
+    if (length < 0.001) return { x: hero.x + hero.facing * range, z: hero.z + 1 };
     const reach = Math.min(length, range);
-    return { x: hero.x + (dx / length) * reach, z: hero.z + (dz / length) * reach };
+    return {
+      x: hero.x + (dx / length) * reach,
+      z: hero.z + 1 + (dz / length) * reach * 0.5,
+    };
   }
 
   private maxHpFor(hero: HeroSchema, runtime: HeroRuntime): number {
@@ -746,7 +793,7 @@ export class MobaRoom extends Room<{
     runtime.itemStats = itemStatTotals([...hero.items], ITEMS);
     hero.maxHp = this.maxHpFor(hero, runtime);
     hero.hp = Math.max(1, Math.min(hero.maxHp, hero.maxHp * ratio));
-    this.addEffect('gold', hero.x, hero.z, 3, ARENA_BALANCE.effectTtlMs, '#ffd54f');
+    this.addEffect('gold', hero.x, hero.z + 1, 3, FIGHT_BALANCE.effectTtlMs, '#ffd54f');
   }
 
   private grantXp(hero: HeroSchema, amount: number): void {
@@ -759,7 +806,7 @@ export class MobaRoom extends Room<{
     hero.level = nextLevel;
     hero.maxHp = this.maxHpFor(hero, runtime);
     hero.hp = Math.min(hero.maxHp, hero.hp + 60 * gained);
-    this.addEffect('levelup', hero.x, hero.z, 4, ARENA_BALANCE.effectTtlMs, '#fff176');
+    this.addEffect('levelup', hero.x, hero.z + 1, 4, FIGHT_BALANCE.effectTtlMs, '#fff176');
   }
 
   // -------------------------------------------------------------- projectiles
@@ -776,12 +823,12 @@ export class MobaRoom extends Room<{
     projectile.team = input.team;
     projectile.x = input.x + dirX * offset;
     projectile.z = input.z + dirZ * offset;
-    projectile.vx = dirX * ARENA_BALANCE.projectileSpeed;
-    projectile.vz = dirZ * ARENA_BALANCE.projectileSpeed;
+    projectile.vx = dirX * FIGHT_BALANCE.projectileSpeed;
+    projectile.vz = dirZ * FIGHT_BALANCE.projectileSpeed;
     projectile.radius = input.radius;
     projectile.damage = input.damage;
     projectile.ttlMs =
-      input.ttlMs ?? Math.max(250, (length / ARENA_BALANCE.projectileSpeed) * 1000 + 100);
+      input.ttlMs ?? Math.max(250, (length / FIGHT_BALANCE.projectileSpeed) * 1000 + 100);
     projectile.color = input.color;
     projectile.aoeRadius = input.aoeRadius;
     projectile.stunMs = input.stunMs ?? 0;
@@ -791,6 +838,7 @@ export class MobaRoom extends Room<{
     this.state.projectiles.set(projectile.id, projectile);
     this.projectileRuntime.set(projectile.id, {
       kind: input.kind,
+      knockback: input.knockback ?? 1,
       skillType: input.skillType,
     });
   }
@@ -806,15 +854,13 @@ export class MobaRoom extends Room<{
       projectile.x += projectile.vx * dt;
       projectile.z += projectile.vz * dt;
       projectile.ttlMs -= deltaMs;
-      const outside =
-        Math.abs(projectile.x) > MOBA_BOUNDS + 8 || Math.abs(projectile.z) > MOBA_BOUNDS + 8;
+      const outside = Math.abs(projectile.x) > 70 || projectile.z < -2 || projectile.z > 34;
       const impact =
         projectile.ttlMs <= 0 ||
         outside ||
-        this.insideCover(projectile.x, projectile.z, projectile.radius) ||
         this.projectileTargets(projectile, projectile.x, projectile.z, projectile.radius).length > 0;
       if (impact) {
-        this.explodeProjectile(projectile);
+        this.explodeProjectile(projectile, runtime);
         expired.push(projectile.id);
       }
     }
@@ -824,23 +870,16 @@ export class MobaRoom extends Room<{
     }
   }
 
-  private insideCover(x: number, z: number, radius: number): boolean {
-    return ARENA_COVER.some(
-      (cover) =>
-        x >= cover.x - cover.w / 2 - radius &&
-        x <= cover.x + cover.w / 2 + radius &&
-        z >= cover.z - cover.h / 2 - radius &&
-        z <= cover.z + cover.h / 2 + radius,
-    );
-  }
-
-  private explodeProjectile(projectile: ProjectileSchema): void {
+  private explodeProjectile(projectile: ProjectileSchema, runtime: ProjectileRuntime): void {
     const radius = Math.max(projectile.aoeRadius, projectile.radius, 1);
+    const dirX = sign(projectile.vx || 1);
     for (const victim of this.projectileTargets(projectile, projectile.x, projectile.z, radius)) {
       this.applyDamage(victim, projectile.damage, projectile.ownerId, {
         stunMs: projectile.stunMs,
         slowPercent: projectile.slowPercent,
         slowMs: projectile.slowMs,
+        knockback: runtime.knockback,
+        dirX,
       });
     }
     this.addEffect(
@@ -848,7 +887,7 @@ export class MobaRoom extends Room<{
       projectile.x,
       projectile.z,
       radius,
-      ARENA_BALANCE.effectTtlMs,
+      FIGHT_BALANCE.effectTtlMs,
       projectile.color,
     );
   }
@@ -862,44 +901,20 @@ export class MobaRoom extends Room<{
     const result: HeroSchema[] = [];
     for (const hero of this.state.heroes.values()) {
       if (!hero.alive || hero.team === projectile.team) continue;
-      if (distance({ x, z }, hero) <= radius + HERO_COLLISION_RADIUS) result.push(hero);
+      if (Math.hypot(x - hero.x, z - (hero.z + 1.2)) <= radius + HERO_RADIUS) result.push(hero);
     }
     return result;
   }
 
   // ---------------------------------------------------------------- targeting
 
-  private enemiesInRadius(
-    x: number,
-    z: number,
-    radius: number,
-    team: TeamId,
-  ): HeroSchema[] {
+  private enemiesInRadius(x: number, z: number, radius: number, team: TeamId): HeroSchema[] {
     const result: HeroSchema[] = [];
     for (const hero of this.state.heroes.values()) {
       if (!hero.alive || hero.team === team) continue;
-      if (distance({ x, z }, hero) <= radius + HERO_COLLISION_RADIUS) result.push(hero);
+      if (Math.hypot(x - hero.x, z - (hero.z + 1.2)) <= radius + HERO_RADIUS) result.push(hero);
     }
     return result;
-  }
-
-  private findNearestEnemyHero(
-    x: number,
-    z: number,
-    range: number,
-    team: TeamId,
-  ): HeroSchema | undefined {
-    let best: HeroSchema | undefined;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    for (const hero of this.state.heroes.values()) {
-      if (!hero.alive || hero.team === team) continue;
-      const d = distance({ x, z }, hero);
-      if (d <= range + HERO_COLLISION_RADIUS && d < bestDistance) {
-        bestDistance = d;
-        best = hero;
-      }
-    }
-    return best;
   }
 
   // ------------------------------------------------------------ damage / xp
@@ -911,7 +926,11 @@ export class MobaRoom extends Room<{
     options: DamageOptions = {},
   ): void {
     if (!target.alive || amount <= 0 || this.state.phase !== 'playing') return;
-    if (attackerId && attackerId !== target.id && this.elapsedMs < (this.heroRuntime.get(target.id)?.protectedUntil ?? 0)) {
+    if (
+      attackerId &&
+      attackerId !== target.id &&
+      this.elapsedMs < (this.heroRuntime.get(target.id)?.protectedUntil ?? 0)
+    ) {
       return;
     }
 
@@ -923,7 +942,21 @@ export class MobaRoom extends Room<{
     }
 
     target.hp = Math.max(0, target.hp - final);
-    this.addEffect('hit', target.x, target.z, 2, ARENA_BALANCE.effectTtlMs, '#fff176');
+    this.addEffect('hit', target.x, target.z + 1.4, 1.6, FIGHT_BALANCE.effectTtlMs, '#fff176');
+
+    const attacker = attackerId ? this.state.heroes.get(attackerId) : undefined;
+    const knockback = Math.max(0, options.knockback ?? 0);
+    if (knockback > 0) {
+      const dir = options.dirX ?? (attacker ? sign(target.x - attacker.x) : target.facing);
+      target.vx += dir * FIGHT_BALANCE.knockbackBase * knockback;
+      target.vz = Math.max(target.vz, FIGHT_BALANCE.knockbackUp * Math.min(2, knockback));
+      target.grounded = false;
+      target.hitstunUntil = Math.max(
+        target.hitstunUntil,
+        this.elapsedMs + FIGHT_BALANCE.hitstunMs,
+      );
+      if (target.hp > 0) this.setHeroAnim(target, 'hurt', FIGHT_BALANCE.hitstunMs);
+    }
 
     if (final > 0) {
       if (options.stunMs && options.stunMs > 0) {
@@ -946,15 +979,16 @@ export class MobaRoom extends Room<{
     target.hp = 0;
     target.anim = 'dead';
     target.deaths += 1;
+    target.stocks = Math.max(0, target.stocks - 1);
     runtime.respawnAt =
-      this.elapsedMs + ARENA_BALANCE.respawnBaseMs + target.level * ARENA_BALANCE.respawnPerLevelMs;
+      target.stocks > 0 ? this.elapsedMs + FIGHT_BALANCE.respawnMs : 0;
     target.respawnIn = runtime.respawnAt - this.elapsedMs;
 
     const killer = attackerId ? this.state.heroes.get(attackerId) : undefined;
     if (killer && killer.team === winnerTeam) {
       killer.kills += 1;
-      killer.gold += ARENA_BALANCE.heroGold;
-      this.grantXp(killer, ARENA_BALANCE.heroXp);
+      killer.gold += 35;
+      this.grantXp(killer, 55);
     }
 
     for (const [helperId, hitAt] of runtime.damagers) {
@@ -962,12 +996,11 @@ export class MobaRoom extends Room<{
       const helper = this.state.heroes.get(helperId);
       if (!helper || helper.team !== winnerTeam) continue;
       helper.assists += 1;
-      helper.gold += Math.round(ARENA_BALANCE.heroGold * 0.4);
-      this.grantXp(helper, ARENA_BALANCE.assistXp);
+      helper.gold += 14;
+      this.grantXp(helper, 25);
     }
     runtime.damagers.clear();
 
-    this.state[scoreKey(winnerTeam)] += 1;
     const ko: MobaKoMessage = {
       x: target.x,
       z: target.z,
@@ -976,7 +1009,7 @@ export class MobaRoom extends Room<{
       amount,
     };
     this.broadcast(MOBA_MESSAGES.KO, ko);
-    this.addEffect('ko', target.x, target.z, 4, ARENA_BALANCE.effectTtlMs, '#d32f2f');
+    this.addEffect('ko', target.x, target.z + 1, 3.4, FIGHT_BALANCE.effectTtlMs, '#d32f2f');
   }
 
   private setHeroAnim(hero: HeroSchema, anim: string, durationMs: number): void {
@@ -1017,19 +1050,116 @@ export class MobaRoom extends Room<{
     for (const id of expired) this.state.effects.delete(id);
   }
 
-  // ------------------------------------------------------------------- match
+  // ------------------------------------------------------------------- round
 
-  private finishMatch(reason: 'timeout' | 'scorelimit'): void {
+  private evaluateRound(): void {
+    let merah = 0;
+    let putih = 0;
+    for (const hero of this.state.heroes.values()) {
+      if (hero.team === 'team_merah') merah += hero.stocks;
+      else putih += hero.stocks;
+    }
+
+    let winner: TeamId | 'draw' | null = null;
+    if (merah <= 0 && putih <= 0) winner = 'draw';
+    else if (putih <= 0) winner = 'team_merah';
+    else if (merah <= 0) winner = 'team_putih';
+    else if (this.state.timeLeft <= 0) {
+      winner = merah > putih ? 'team_merah' : putih > merah ? 'team_putih' : 'draw';
+    }
+
+    if (winner) this.endRound(winner);
+  }
+
+  private endRound(winner: TeamId | 'draw'): void {
+    this.state.roundWinner = winner;
+    if (winner !== 'draw') {
+      this.state[scoreKey(winner)] += 1;
+      if (this.state[scoreKey(winner)] >= FIGHT_BALANCE.roundsToWin) {
+        this.finishMatch('rounds');
+        return;
+      }
+    }
+    this.state.phase = 'intermission';
+    this.intermissionLeftMs = FIGHT_BALANCE.intermissionMs;
+    this.state.intermissionMs = FIGHT_BALANCE.intermissionMs;
+  }
+
+  private advanceRound(): void {
+    if (this.state.round >= FIGHT_BALANCE.maxRounds) {
+      this.finishMatch('timeout');
+      return;
+    }
+    this.state.round += 1;
+    this.resetRound();
+  }
+
+  private resetRound(): void {
+    this.roundElapsedMs = 0;
+    this.state.timeLeft = FIGHT_BALANCE.roundSeconds;
+    this.state.phase = 'playing';
+    this.state.roundWinner = '';
+    this.state.intermissionMs = 0;
+    this.state.projectiles.clear();
+    this.projectileRuntime.clear();
+
+    const perTeam: Record<TeamId, number> = { team_merah: 0, team_putih: 0 };
+    for (const hero of this.state.heroes.values()) {
+      const runtime = this.heroRuntime.get(hero.id);
+      if (!runtime) continue;
+      const spawn = fightSpawnPoint(hero.team, perTeam[hero.team]++, this.teamSize);
+      hero.x = spawn.x;
+      hero.z = spawn.z;
+      hero.vx = 0;
+      hero.vz = 0;
+      hero.facing = this.teamFacing(hero.team);
+      hero.maxHp = this.maxHpFor(hero, runtime);
+      hero.hp = hero.maxHp;
+      hero.alive = true;
+      hero.stocks = FIGHT_BALANCE.stocksPerHero;
+      hero.maxStocks = FIGHT_BALANCE.stocksPerHero;
+      hero.grounded = true;
+      hero.jumpCount = 0;
+      hero.combo = 0;
+      hero.anim = 'idle';
+      hero.respawnIn = 0;
+      hero.hitstunUntil = 0;
+      hero.dashUntil = 0;
+      hero.stunUntil = 0;
+      hero.slowUntil = 0;
+      hero.speedBoostUntil = 0;
+      runtime.respawnAt = 0;
+      runtime.readyAt = { basic: 0, skill1: 0, skill2: 0, ultimate: 0 };
+      runtime.protectedUntil = this.elapsedMs + FIGHT_BALANCE.spawnProtectionMs;
+      runtime.damagers.clear();
+      runtime.animUntil = 0;
+      runtime.prevJump = false;
+      runtime.prevDash = false;
+      runtime.lastBasicAt = -9999;
+      runtime.comboResetAt = 0;
+      runtime.dashReadyAt = 0;
+      runtime.move = {
+        dx: 0,
+        dz: 0,
+        jump: false,
+        dash: false,
+        aimX: spawn.x + this.teamFacing(hero.team) * 4,
+        aimZ: spawn.z + 1,
+      };
+    }
+  }
+
+  private finishMatch(reason: 'rounds' | 'timeout'): void {
     if (this.ending) return;
     this.ending = true;
     this.state.phase = 'finished';
-
     const winner =
       this.state.scoreMerah === this.state.scorePutih
         ? 'draw'
         : this.state.scoreMerah > this.state.scorePutih
           ? 'team_merah'
           : 'team_putih';
+    this.state.winner = winner;
 
     const rewards: Record<string, number> = {};
     for (const hero of this.humans.values()) {
@@ -1044,6 +1174,7 @@ export class MobaRoom extends Room<{
       scorePutih: this.state.scorePutih,
       rewards,
       reason,
+      round: this.state.round,
     };
     this.broadcast(MOBA_MESSAGES.MATCH_END, message);
   }

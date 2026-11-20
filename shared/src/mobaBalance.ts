@@ -22,6 +22,39 @@ export const ARENA_BALANCE = {
   effectTtlMs: 420,
 } as const;
 
+/** Balancing side-view fighting: 3 nyawa per hero, best-of-3 round. */
+export const FIGHT_BALANCE = {
+  roundSeconds: 90,
+  stocksPerHero: 3,
+  roundsToWin: 2,
+  maxRounds: 3,
+  intermissionMs: 2600,
+  respawnMs: 1100,
+  spawnProtectionMs: 1000,
+
+  gravity: 46,
+  jumpSpeed: 17,
+  doubleJumpSpeed: 15,
+  maxFallSpeed: 32,
+  groundAcceleration: 95,
+  airAcceleration: 55,
+  groundFriction: 14,
+  airFriction: 1.8,
+  dashSpeed: 26,
+  dashMs: 190,
+  dashCooldownMs: 1600,
+
+  hitstunMs: 200,
+  knockbackBase: 6,
+  knockbackUp: 5,
+  comboWindowMs: 520,
+  comboResetMs: 950,
+  comboDamageStep: 0.14,
+
+  projectileSpeed: 34,
+  effectTtlMs: 420,
+} as const;
+
 export const MOBA_BALANCE = {
   matchSeconds: 600,
   scoreLimit: 60,

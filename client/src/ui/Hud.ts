@@ -1,12 +1,8 @@
 import {
-  ARENA_CENTER,
-  ARENA_CENTER_RADIUS,
-  ARENA_COVER,
-  ARENA_SPAWNS,
-  ARENA_SPAWN_RADIUS,
+  FIGHT_HALF_WIDTH,
+  FIGHT_PLATFORMS,
+  FIGHT_WORLD_HEIGHT,
   MOBA_BALANCE,
-  MOBA_BUSHES,
-  MOBA_HALF,
   formatMatchTime,
   levelProgress,
 } from '@pp/shared';
@@ -22,7 +18,7 @@ export interface HudCallbacks {
 }
 
 const SKILLS: Array<{ key: MobaSkillKey; label: string; hotkey: string }> = [
-  { key: 'basic', label: 'SERANG', hotkey: 'A' },
+  { key: 'basic', label: 'SERANG', hotkey: 'J' },
   { key: 'skill1', label: 'S1', hotkey: '1' },
   { key: 'skill2', label: 'S2', hotkey: '2' },
   { key: 'ultimate', label: 'ULT', hotkey: '3' },
@@ -32,10 +28,11 @@ export class Hud {
   readonly joystick: VirtualJoystick;
   private readonly root: HTMLDivElement;
   private readonly minimap: HTMLCanvasElement;
-  private readonly mapBackdrop = new Image();
   private readonly scoreMerah: HTMLElement;
   private readonly scorePutih: HTMLElement;
   private readonly timer: HTMLElement;
+  private readonly round: HTMLElement;
+  private readonly stocks: HTMLElement;
   private readonly gold: HTMLElement;
   private readonly level: HTMLElement;
   private readonly xpFill: HTMLElement;
@@ -55,6 +52,7 @@ export class Hud {
   private shopSignature = '';
   private lastMinimapDraw = 0;
   private aimHint: HTMLElement;
+  private currentHero: MobaHeroView | null = null;
 
   constructor(parent: HTMLElement, private readonly callbacks: HudCallbacks) {
     this.root = document.createElement('div');
@@ -62,12 +60,16 @@ export class Hud {
     this.root.innerHTML = `
       <div class="hud-top">
         <div class="minimap-panel">
-          <canvas class="minimap" width="320" height="320"></canvas>
-          <div class="minimap-caption">ARENA KAMPUNG</div>
+          <canvas class="minimap" width="320" height="150"></canvas>
+          <div class="minimap-caption">PETA STAGE KAMPUNG</div>
         </div>
         <div class="score-panel">
           <div class="score-side merah"><span>TIM MERAH</span><b id="hud-score-merah">0</b></div>
-          <div class="score-middle"><b id="hud-timer">05:00</b><span>SKOR KILL</span></div>
+          <div class="score-middle">
+            <b id="hud-timer">01:30</b>
+            <span id="hud-round">ROUND 1 • BEST OF 3</span>
+            <em id="hud-stocks">NYAWA ●●●</em>
+          </div>
           <div class="score-side putih"><b id="hud-score-putih">0</b><span>TIM PUTIH</span></div>
         </div>
         <div class="shop-panel">
@@ -78,7 +80,7 @@ export class Hud {
 
       <div class="hud-bottom-left">
         <div class="joystick-wrap"></div>
-        <div class="move-hint">GESER UNTUK JALAN</div>
+        <div class="move-hint">A/D JALAN • W LOMPAT 2X • SHIFT DASH • J SERANG</div>
       </div>
 
       <div class="hud-bottom-center">
@@ -91,7 +93,7 @@ export class Hud {
       </div>
 
       <div class="hud-bottom-right">
-        <div class="aim-hint" id="hud-aim-hint">Ketuk peta untuk bidik</div>
+        <div class="aim-hint" id="hud-aim-hint">Klik stage untuk bidik</div>
         <div class="skill-wheel" id="hud-skills"></div>
       </div>
 
@@ -113,10 +115,11 @@ export class Hud {
     };
 
     this.minimap = q<HTMLCanvasElement>('.minimap');
-    this.mapBackdrop.src = '/assets/maps/design_map.png';
     this.scoreMerah = q<HTMLElement>('#hud-score-merah');
     this.scorePutih = q<HTMLElement>('#hud-score-putih');
     this.timer = q<HTMLElement>('#hud-timer');
+    this.round = q<HTMLElement>('#hud-round');
+    this.stocks = q<HTMLElement>('#hud-stocks');
     this.gold = q<HTMLElement>('#hud-gold');
     this.level = q<HTMLElement>('#hud-level');
     this.xpFill = q<HTMLElement>('#hud-xp-fill');
@@ -154,7 +157,7 @@ export class Hud {
     q<HTMLButtonElement>('#hud-end-back').addEventListener('click', () => this.callbacks.onLeave());
 
     window.addEventListener('keydown', (event) => {
-      const map: Record<string, MobaSkillKey> = { a: 'basic', A: 'basic', '1': 'skill1', '2': 'skill2', '3': 'ultimate' };
+      const map: Record<string, MobaSkillKey> = { j: 'basic', '1': 'skill1', '2': 'skill2', '3': 'ultimate' };
       const key = map[event.key];
       if (key && !this.root.classList.contains('hidden')) {
         audio.unlock();
@@ -190,22 +193,20 @@ export class Hud {
     let { x, z } = this.aim;
     if (!this.hasAim) {
       const hero = this.currentHero;
-      x = hero ? hero.x + Math.cos(hero.facing) * 8 : 0;
-      z = hero ? hero.z + Math.sin(hero.facing) * 8 : 0;
+      x = hero ? hero.x + hero.facing * 8 : 0;
+      z = hero ? hero.z + 1.5 : 1.5;
     }
     audio.unlock();
     audio.play(key === 'basic' ? 'fuse' : 'explosion');
     this.callbacks.onSkill(key, x, z);
   }
 
-  private currentHero: MobaHeroView | null = null;
-
   addFeed(message: MobaKoMessage, state: ClientMobaState | null): void {
     const attacker = message.attackerId ? state?.heroes[message.attackerId] : undefined;
     const victim = message.victimId ? state?.heroes[message.victimId] : undefined;
     const text = attacker && victim
-      ? `${attacker.name} meng-GOSONG-kan ${victim.name} 💥`
-      : 'Sebuah unit kena petasan! 💥';
+      ? `${attacker.name} meng-GOSONG-kan ${victim.name} 💥 (nyawa ${victim.stocks})`
+      : 'Sebuah hero kena petasan! 💥';
     const line = document.createElement('div');
     line.className = 'feed-line';
     line.textContent = text;
@@ -217,7 +218,7 @@ export class Hud {
     const menang = message.winner !== 'draw' && message.winner === this.currentHero?.team;
     const hadiah = message.rewards[localId] ?? 0;
     this.endTitle.textContent = menang ? '🏆 KAMPUNG KITA MENANG!' : '💥 KALAH, TAPI GOSONG NYATA';
-    this.endDetail.textContent = `Skor ${message.scoreMerah} - ${message.scorePutih} • Hadiah +${hadiah} Koin THR`;
+    this.endDetail.textContent = `Round ${message.scoreMerah} - ${message.scorePutih} • Hadiah +${hadiah} Koin THR`;
     this.endPanel.classList.remove('hidden');
     audio.play('kentongan');
   }
@@ -230,7 +231,11 @@ export class Hud {
     this.scoreMerah.textContent = String(state.scoreMerah);
     this.scorePutih.textContent = String(state.scorePutih);
     this.timer.textContent = formatMatchTime(state.timeLeft);
-    this.timer.classList.toggle('urgent', state.timeLeft <= 60);
+    this.timer.classList.toggle('urgent', state.timeLeft <= 15);
+    this.round.textContent = `ROUND ${state.round} • BEST OF 3`;
+    this.stocks.textContent = hero
+      ? `NYAWA ${'●'.repeat(hero.stocks)}${'○'.repeat(Math.max(0, hero.maxStocks - hero.stocks))}`
+      : '';
 
     if (hero) {
       if (hero.heroId !== this.lastHeroId) {
@@ -245,7 +250,9 @@ export class Hud {
       this.hpFill.classList.toggle('low', ratio < 0.3);
       this.hpText.textContent = hero.alive
         ? `${Math.ceil(hero.hp)} / ${Math.ceil(hero.maxHp)}`
-        : `RESPAWN ${Math.ceil(hero.respawnIn / 1000)}s`;
+        : hero.stocks <= 0
+          ? 'ELIMINATED'
+          : `RESPAWN ${Math.ceil(hero.respawnIn / 1000)}s`;
 
       const cds: Record<MobaSkillKey, number> = {
         basic: hero.cdBasic,
@@ -276,7 +283,7 @@ export class Hud {
     const now = performance.now();
     if (now - this.lastMinimapDraw >= 100) {
       this.lastMinimapDraw = now;
-      this.drawMinimap(state, localId);
+      this.drawStageMap(state, localId);
     }
   }
 
@@ -302,67 +309,38 @@ export class Hud {
     });
   }
 
-  private drawMinimap(state: ClientMobaState, localId: string): void {
+  private drawStageMap(state: ClientMobaState, localId: string): void {
     const context = this.minimap.getContext('2d');
     if (!context) return;
-    const size = this.minimap.width;
-    const scale = size / (MOBA_HALF * 2);
-    const px = (x: number): number => (x + MOBA_HALF) * scale;
-    const pz = (z: number): number => (z + MOBA_HALF) * scale;
+    const w = this.minimap.width;
+    const h = this.minimap.height;
+    const px = (x: number): number => ((x + FIGHT_HALF_WIDTH) / (FIGHT_HALF_WIDTH * 2)) * w;
+    const pz = (z: number): number => h - (z / FIGHT_WORLD_HEIGHT) * h;
 
-    context.clearRect(0, 0, size, size);
-    context.fillStyle = '#163a22';
-    context.fillRect(0, 0, size, size);
+    context.clearRect(0, 0, w, h);
+    const sky = context.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#bfe3f5');
+    sky.addColorStop(1, '#e6c280');
+    context.fillStyle = sky;
+    context.fillRect(0, 0, w, h);
 
-    // Referensi peta dari raw asset, jadi latar minimap lebih mirip desain.
-    if (this.mapBackdrop.complete && this.mapBackdrop.naturalWidth > 0) {
-      context.save();
-      context.globalAlpha = 0.38;
-      context.drawImage(this.mapBackdrop, 0, 0, size, size);
-      context.restore();
-    }
-
-    // Ring tengah arena.
-    context.strokeStyle = 'rgba(255,213,79,0.65)';
-    context.lineWidth = 2;
-    context.beginPath();
-    context.arc(px(ARENA_CENTER.x), pz(ARENA_CENTER.z), ARENA_CENTER_RADIUS * scale, 0, Math.PI * 2);
-    context.stroke();
-
-    // Zona spawn tim.
-    for (const team of ['team_merah', 'team_putih'] as const) {
-      const spawn = ARENA_SPAWNS[team];
-      context.fillStyle = team === 'team_merah' ? 'rgba(239,83,80,0.35)' : 'rgba(245,245,245,0.35)';
-      context.beginPath();
-      context.arc(px(spawn.x), pz(spawn.z), ARENA_SPAWN_RADIUS * scale, 0, Math.PI * 2);
-      context.fill();
-    }
-
-    // Prop cover.
-    context.fillStyle = 'rgba(160,120,75,0.8)';
-    for (const cover of ARENA_COVER) {
+    context.fillStyle = '#8d5524';
+    for (const platform of FIGHT_PLATFORMS) {
       context.fillRect(
-        px(cover.x - cover.w / 2),
-        pz(cover.z - cover.h / 2),
-        cover.w * scale,
-        cover.h * scale,
+        px(platform.x - platform.w / 2),
+        pz(platform.z) - 2,
+        (platform.w / (FIGHT_HALF_WIDTH * 2)) * w,
+        4,
       );
     }
+    context.fillStyle = '#66bb6a';
+    context.fillRect(0, h - 8, w, 8);
 
-    // Semak.
-    context.fillStyle = 'rgba(46,125,50,0.55)';
-    for (const bush of MOBA_BUSHES) {
-      context.beginPath();
-      context.arc(px(bush.x), pz(bush.z), bush.r * scale, 0, Math.PI * 2);
-      context.fill();
-    }
-
-    // Hero.
     for (const unit of Object.values(state.heroes)) {
-      if (!unit.alive) continue;
+      if (!unit.alive || unit.stocks <= 0) continue;
       const isLocal = unit.id === localId;
       context.beginPath();
-      context.arc(px(unit.x), pz(unit.z), isLocal ? 6 : 4.5, 0, Math.PI * 2);
+      context.arc(px(unit.x), pz(unit.z + 1), isLocal ? 6 : 4.5, 0, Math.PI * 2);
       context.fillStyle = unit.team === 'team_merah' ? '#d32f2f' : '#fafafa';
       context.fill();
       context.lineWidth = isLocal ? 2.5 : 1.5;
