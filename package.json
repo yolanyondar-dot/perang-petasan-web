@@ -1,0 +1,36 @@
+{
+  "name": "perang-petasan-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Perang Petasan: Arena PvP 2D - browser multiplayer top-down bertema kampung",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "build": "npm run build -w @pp/shared && npm run build -w @pp/server && npm run build -w @pp/client",
+    "build:shared": "npm run build -w @pp/shared",
+    "build:server": "npm run build -w @pp/server",
+    "build:client": "npm run build -w @pp/client",
+    "assets:process": "node scripts/process-assets.mjs",
+    "dev": "npm run build:shared && concurrently -k -n server,client -c cyan,magenta \"npm run dev -w @pp/server\" \"npm run dev -w @pp/client\"",
+    "dev:server": "npm run build:shared && npm run dev -w @pp/server",
+    "dev:client": "npm run build:shared && npm run dev -w @pp/client",
+    "start": "npm run start -w @pp/server",
+    "deploy:koyeb": "koyeb deploy . perang-petasan/arena --archive-builder docker --archive-ignore-dir dist --ports 8080:http --routes /:8080 --checks 8080:http:/health --wait",
+    "typecheck": "npm run typecheck -w @pp/shared && npm run typecheck -w @pp/server && npm run typecheck -w @pp/client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "sharp": "^0.35.5",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "msgpackr-extract@3.0.7": true
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "weapons": [
+    {
+      "id": "sarung_pecut",
+      "name": "Sarung Gulung",
+      "type": "melee",
+      "unlockCost": 0,
+      "baseStats": {
+        "damage": 28,
+        "range": 75,
+        "aoeRadius": 45,
+        "cooldownMs": 600,
+        "projectileSpeed": 0,
+        "fuseMs": 0
+      },
+      "upgradeScaling": {
+        "maxLevel": 10,
+        "baseCost": 80,
+        "costMultiplier": 1.3,
+        "damagePerLevel": 6,
+        "radiusPerLevel": 2,
+        "cooldownReductionMs": 20
+      }
+    },
+    {
+      "id": "sandal_jepit",
+      "name": "Sandal Jepit Legend",
+      "type": "ranged_projectile",
+      "unlockCost": 250,
+      "baseStats": {
+        "damage": 24,
+        "range": 380,
+        "aoeRadius": 25,
+        "cooldownMs": 750,
+        "projectileSpeed": 480,
+        "fuseMs": 0
+      },
+      "upgradeScaling": {
+        "maxLevel": 10,
+        "baseCost": 100,
+        "costMultiplier": 1.3,
+        "damagePerLevel": 5,
+        "radiusPerLevel": 1,
+        "cooldownReductionMs": 25
+      }
+    },
+    {
+      "id": "petasan_banting",
+      "name": "Petasan Banting",
+      "type": "ranged_aoe",
+      "unlockCost": 0,
+      "baseStats": {
+        "damage": 35,
+        "range": 300,
+        "aoeRadius": 70,
+        "cooldownMs": 1100,
+        "projectileSpeed": 360,
+        "fuseMs": 600
+      },
+      "upgradeScaling": {
+        "maxLevel": 10,
+        "baseCost": 110,
+        "costMultiplier": 1.35,
+        "damagePerLevel": 8,
+        "radiusPerLevel": 4,
+        "cooldownReductionMs": 30
+      }
+    },
+    {
+      "id": "mercon_sreng",
+      "name": "Mercon Sreng",
+      "type": "ranged_rocket",
+      "unlockCost": 500,
+      "baseStats": {
+        "damage": 48,
+        "range": 520,
+        "aoeRadius": 85,
+        "cooldownMs": 1600,
+        "projectileSpeed": 620,
+        "fuseMs": 850
+      },
+      "upgradeScaling": {
+        "maxLevel": 10,
+        "baseCost": 160,
+        "costMultiplier": 1.4,
+        "damagePerLevel": 10,
+        "radiusPerLevel": 5,
+        "cooldownReductionMs": 45
+      }
+    },
+    {
+      "id": "meriam_bambu",
+      "name": "Meriam Bambu Karbit",
+      "type": "heavy_artillery",
+      "unlockCost": 900,
+      "baseStats": {
+        "damage": 85,
+        "range": 480,
+        "aoeRadius": 135,
+        "cooldownMs": 2800,
+        "projectileSpeed": 400,
+        "fuseMs": 1200
+      },
+      "upgradeScaling": {
+        "maxLevel": 10,
+        "baseCost": 220,
+        "costMultiplier": 1.45,
+        "damagePerLevel": 16,
+        "radiusPerLevel": 8,
+        "cooldownReductionMs": 80
+      }
+    }
+  ]
+}

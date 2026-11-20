@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: perang-petasan
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    domains:
+      - petasan.yondarprojects.my.id
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
