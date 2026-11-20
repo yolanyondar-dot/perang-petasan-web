@@ -1,0 +1,1213 @@
+{
+  "version": 1,
+  "generator": "scripts/generate-character-sprites.mjs",
+  "image": "hero-atlas.png",
+  "sheetWidth": 1024,
+  "sheetHeight": 1920,
+  "cell": {
+    "w": 128,
+    "h": 128,
+    "anchorX": 64,
+    "anchorY": 116
+  },
+  "frame_layout": {
+    "rows": {
+      "bocil_sarung:idle": {
+        "label": "bocil_sarung idle",
+        "source": "client/raw_assets/bocil-sarung-move.jpg",
+        "frames": [
+          {
+            "index": 0,
+            "x": 0,
+            "y": 0,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "bocil_sarung:walk": {
+        "label": "bocil_sarung walk",
+        "source": "client/raw_assets/bocil-sarung-move.jpg",
+        "frames": [
+          {
+            "index": 0,
+            "x": 128,
+            "y": 0,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 256,
+            "y": 0,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 384,
+            "y": 0,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 512,
+            "y": 0,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 4,
+            "x": 640,
+            "y": 0,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "bocil_sarung:jump": {
+        "label": "bocil_sarung jump",
+        "source": "client/raw_assets/bocil-sarung-move.jpg",
+        "frames": [
+          {
+            "index": 0,
+            "x": 768,
+            "y": 0,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 896,
+            "y": 0,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 0,
+            "y": 128,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "bocil_sarung:attack": {
+        "label": "bocil_sarung attack",
+        "source": "client/raw_assets/bocil-sarung-move.jpg",
+        "frames": [
+          {
+            "index": 0,
+            "x": 128,
+            "y": 128,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 256,
+            "y": 128,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 384,
+            "y": 128,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "bocil_sarung:cast": {
+        "label": "bocil_sarung cast",
+        "source": "client/raw_assets/bocil-sarung-move.jpg",
+        "frames": [
+          {
+            "index": 0,
+            "x": 512,
+            "y": 128,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "bocil_sarung:hurt": {
+        "label": "bocil_sarung hurt",
+        "source": "client/raw_assets/bocil-sarung-move.jpg",
+        "frames": [
+          {
+            "index": 0,
+            "x": 640,
+            "y": 128,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 768,
+            "y": 128,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "bocil_sarung:down": {
+        "label": "bocil_sarung down",
+        "source": "client/raw_assets/bocil-sarung-move.jpg",
+        "frames": [
+          {
+            "index": 0,
+            "x": 896,
+            "y": 128,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 0,
+            "y": 256,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "bocil_sarung:ultimate": {
+        "label": "bocil_sarung ultimate",
+        "source": "client/raw_assets/bocil-sarung-move.jpg",
+        "frames": [
+          {
+            "index": 0,
+            "x": 128,
+            "y": 256,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "abang_ronda:idle": {
+        "label": "abang_ronda idle",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 256,
+            "y": 256,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 384,
+            "y": 256,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 512,
+            "y": 256,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 640,
+            "y": 256,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "abang_ronda:walk": {
+        "label": "abang_ronda walk",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 768,
+            "y": 256,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 896,
+            "y": 256,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 0,
+            "y": 384,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 128,
+            "y": 384,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 4,
+            "x": 256,
+            "y": 384,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 5,
+            "x": 384,
+            "y": 384,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "abang_ronda:jump": {
+        "label": "abang_ronda jump",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 512,
+            "y": 384,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 640,
+            "y": 384,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 768,
+            "y": 384,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 896,
+            "y": 384,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "abang_ronda:attack": {
+        "label": "abang_ronda attack",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 0,
+            "y": 512,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 128,
+            "y": 512,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 256,
+            "y": 512,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 384,
+            "y": 512,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "abang_ronda:cast": {
+        "label": "abang_ronda cast",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 512,
+            "y": 512,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 640,
+            "y": 512,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 768,
+            "y": 512,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 896,
+            "y": 512,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "abang_ronda:hurt": {
+        "label": "abang_ronda hurt",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 0,
+            "y": 640,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 128,
+            "y": 640,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 256,
+            "y": 640,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 384,
+            "y": 640,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "abang_ronda:down": {
+        "label": "abang_ronda down",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 512,
+            "y": 640,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 640,
+            "y": 640,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 768,
+            "y": 640,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 896,
+            "y": 640,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "abang_ronda:ultimate": {
+        "label": "abang_ronda ultimate",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 0,
+            "y": 768,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 128,
+            "y": 768,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 256,
+            "y": 768,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 384,
+            "y": 768,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "tukang_lodong:idle": {
+        "label": "tukang_lodong idle",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 512,
+            "y": 768,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 640,
+            "y": 768,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 768,
+            "y": 768,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 896,
+            "y": 768,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "tukang_lodong:walk": {
+        "label": "tukang_lodong walk",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 0,
+            "y": 896,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 128,
+            "y": 896,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 256,
+            "y": 896,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 384,
+            "y": 896,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 4,
+            "x": 512,
+            "y": 896,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 5,
+            "x": 640,
+            "y": 896,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "tukang_lodong:jump": {
+        "label": "tukang_lodong jump",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 768,
+            "y": 896,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 896,
+            "y": 896,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 0,
+            "y": 1024,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 128,
+            "y": 1024,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "tukang_lodong:attack": {
+        "label": "tukang_lodong attack",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 256,
+            "y": 1024,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 384,
+            "y": 1024,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 512,
+            "y": 1024,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 640,
+            "y": 1024,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "tukang_lodong:cast": {
+        "label": "tukang_lodong cast",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 768,
+            "y": 1024,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 896,
+            "y": 1024,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 0,
+            "y": 1152,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 128,
+            "y": 1152,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "tukang_lodong:hurt": {
+        "label": "tukang_lodong hurt",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 256,
+            "y": 1152,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 384,
+            "y": 1152,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 512,
+            "y": 1152,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 640,
+            "y": 1152,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "tukang_lodong:down": {
+        "label": "tukang_lodong down",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 768,
+            "y": 1152,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 896,
+            "y": 1152,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 0,
+            "y": 1280,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 128,
+            "y": 1280,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "tukang_lodong:ultimate": {
+        "label": "tukang_lodong ultimate",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 256,
+            "y": 1280,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 384,
+            "y": 1280,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 512,
+            "y": 1280,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 640,
+            "y": 1280,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "emak_daster:idle": {
+        "label": "emak_daster idle",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 768,
+            "y": 1280,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 896,
+            "y": 1280,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 0,
+            "y": 1408,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 128,
+            "y": 1408,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "emak_daster:walk": {
+        "label": "emak_daster walk",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 256,
+            "y": 1408,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 384,
+            "y": 1408,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 512,
+            "y": 1408,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 640,
+            "y": 1408,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 4,
+            "x": 768,
+            "y": 1408,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 5,
+            "x": 896,
+            "y": 1408,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "emak_daster:jump": {
+        "label": "emak_daster jump",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 0,
+            "y": 1536,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 128,
+            "y": 1536,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 256,
+            "y": 1536,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 384,
+            "y": 1536,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "emak_daster:attack": {
+        "label": "emak_daster attack",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 512,
+            "y": 1536,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 640,
+            "y": 1536,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 768,
+            "y": 1536,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 896,
+            "y": 1536,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "emak_daster:cast": {
+        "label": "emak_daster cast",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 0,
+            "y": 1664,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 128,
+            "y": 1664,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 256,
+            "y": 1664,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 384,
+            "y": 1664,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "emak_daster:hurt": {
+        "label": "emak_daster hurt",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 512,
+            "y": 1664,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 640,
+            "y": 1664,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 768,
+            "y": 1664,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 896,
+            "y": 1664,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "emak_daster:down": {
+        "label": "emak_daster down",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 0,
+            "y": 1792,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 128,
+            "y": 1792,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 256,
+            "y": 1792,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 384,
+            "y": 1792,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      },
+      "emak_daster:ultimate": {
+        "label": "emak_daster ultimate",
+        "source": "svg-procedural",
+        "frames": [
+          {
+            "index": 0,
+            "x": 512,
+            "y": 1792,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 1,
+            "x": 640,
+            "y": 1792,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 2,
+            "x": 768,
+            "y": 1792,
+            "w": 128,
+            "h": 128
+          },
+          {
+            "index": 3,
+            "x": 896,
+            "y": 1792,
+            "w": 128,
+            "h": 128
+          }
+        ]
+      }
+    }
+  },
+  "animation": {
+    "rows": {
+      "bocil_sarung:idle": {
+        "fps": 5,
+        "loop": true,
+        "durationMs": 200
+      },
+      "bocil_sarung:walk": {
+        "fps": 8,
+        "loop": true,
+        "durationMs": 625
+      },
+      "bocil_sarung:jump": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 375
+      },
+      "bocil_sarung:attack": {
+        "fps": 12,
+        "loop": false,
+        "durationMs": 250
+      },
+      "bocil_sarung:cast": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 125
+      },
+      "bocil_sarung:hurt": {
+        "fps": 12,
+        "loop": false,
+        "durationMs": 167
+      },
+      "bocil_sarung:down": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 250
+      },
+      "bocil_sarung:ultimate": {
+        "fps": 6,
+        "loop": false,
+        "durationMs": 167
+      },
+      "abang_ronda:idle": {
+        "fps": 5,
+        "loop": true,
+        "durationMs": 800
+      },
+      "abang_ronda:walk": {
+        "fps": 10,
+        "loop": true,
+        "durationMs": 600
+      },
+      "abang_ronda:jump": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 500
+      },
+      "abang_ronda:attack": {
+        "fps": 12,
+        "loop": false,
+        "durationMs": 333
+      },
+      "abang_ronda:cast": {
+        "fps": 10,
+        "loop": false,
+        "durationMs": 400
+      },
+      "abang_ronda:hurt": {
+        "fps": 12,
+        "loop": false,
+        "durationMs": 333
+      },
+      "abang_ronda:down": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 500
+      },
+      "abang_ronda:ultimate": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 500
+      },
+      "tukang_lodong:idle": {
+        "fps": 5,
+        "loop": true,
+        "durationMs": 800
+      },
+      "tukang_lodong:walk": {
+        "fps": 10,
+        "loop": true,
+        "durationMs": 600
+      },
+      "tukang_lodong:jump": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 500
+      },
+      "tukang_lodong:attack": {
+        "fps": 12,
+        "loop": false,
+        "durationMs": 333
+      },
+      "tukang_lodong:cast": {
+        "fps": 10,
+        "loop": false,
+        "durationMs": 400
+      },
+      "tukang_lodong:hurt": {
+        "fps": 12,
+        "loop": false,
+        "durationMs": 333
+      },
+      "tukang_lodong:down": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 500
+      },
+      "tukang_lodong:ultimate": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 500
+      },
+      "emak_daster:idle": {
+        "fps": 5,
+        "loop": true,
+        "durationMs": 800
+      },
+      "emak_daster:walk": {
+        "fps": 10,
+        "loop": true,
+        "durationMs": 600
+      },
+      "emak_daster:jump": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 500
+      },
+      "emak_daster:attack": {
+        "fps": 12,
+        "loop": false,
+        "durationMs": 333
+      },
+      "emak_daster:cast": {
+        "fps": 10,
+        "loop": false,
+        "durationMs": 400
+      },
+      "emak_daster:hurt": {
+        "fps": 12,
+        "loop": false,
+        "durationMs": 333
+      },
+      "emak_daster:down": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 500
+      },
+      "emak_daster:ultimate": {
+        "fps": 8,
+        "loop": false,
+        "durationMs": 500
+      }
+    }
+  }
+}

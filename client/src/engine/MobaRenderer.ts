@@ -1,6 +1,12 @@
 /**
- * Renderer Canvas2D side-view untuk fighting game Perang Petasan.
- * API `createMobaRenderer()` dipertahankan; koordinat z adalah ketinggian dari lantai.
+ * Renderer Canvas2D fighting untuk Perang Petasan.
+ *
+ * Konvensi docs/stage-background.md + docs/sprite-runtime.md:
+ * - stage = satu gambar 16:9, kamera diam, tanpa parallax/scrolling
+ * - hero = sprite frame-based dari atlas + manifest, anchor di kaki, flip di anchor
+ * - efek hit = flash, blink, percikan, shake, hit-stop ringan (lihat docs/hit-reactions.md)
+ *
+ * API `createMobaRenderer()` dipertahankan.
  */
 import {
   FIGHT_GROUND_Z,
@@ -8,6 +14,7 @@ import {
   FIGHT_PLATFORMS,
   FIGHT_SPAWNS,
   FIGHT_WORLD_HEIGHT,
+  FIGHT_WORLD_WIDTH,
 } from '@pp/shared';
 import type {
   ClientMobaState,
@@ -15,7 +22,7 @@ import type {
   MobaHeroView,
   TeamId,
 } from '@pp/shared';
-import { HEROES, heroPortrait } from '../core/catalog.js';
+import { HEROES } from '../core/catalog.js';
 
 export interface MobaRenderer {
   mount(container: HTMLElement): void;
@@ -54,20 +61,19 @@ interface ExplosionFlash {
   radius: number;
 }
 
-interface SkillFrame {
-  index: number;
+interface FrameRect {
   x: number;
   y: number;
   w: number;
   h: number;
 }
 
-interface SkillAnimationRow {
-  label: string;
-  fps: number;
-  loop: boolean;
-  durationMs: number;
-  frames: SkillFrame[];
+interface AtlasAnimRow {
+  label?: string;
+  fps?: number;
+  loop?: boolean;
+  durationMs?: number;
+  frames: FrameRect[];
 }
 
 interface SkillAtlasManifest {
@@ -76,18 +82,37 @@ interface SkillAtlasManifest {
   sheetHeight: number;
   frameWidth: number;
   frameHeight: number;
-  frame_layout: { rows: Record<string, SkillAnimationRow> };
+  frame_layout: { rows: Record<string, AtlasAnimRow> };
+}
+
+interface SpriteAtlasManifest {
+  image: string;
+  sheetWidth: number;
+  sheetHeight: number;
+  cell: { w: number; h: number; anchorX: number; anchorY: number };
+  frame_layout: { rows: Record<string, AtlasAnimRow> };
+  animation: { rows: Record<string, { fps: number; loop: boolean; durationMs: number }> };
 }
 
 interface SkillAnimInstance {
   key: string;
-  row: SkillAnimationRow;
+  row: AtlasAnimRow;
   x: number;
   z: number;
   radius: number;
   dirX: number;
   life: number;
   maxLife: number;
+}
+
+interface SpriteTrack {
+  key: string;
+  startedAt: number;
+}
+
+interface HitReaction {
+  flashUntil: number;
+  blinkUntil: number;
 }
 
 interface UltimateCutIn {
@@ -98,7 +123,13 @@ interface UltimateCutIn {
 }
 
 const TAU = Math.PI * 2;
-const VIEW_HEIGHT = 33;
+const STAGE_WIDTH = 1280;
+const STAGE_HEIGHT = 720;
+/** Garis pijakan di stage-kampung.png (pita lantai mulai ~75% tinggi). */
+const STAGE_GROUND_Y = 548;
+const SPRITE_CELL = 128;
+/** Tinggi sel sprite dalam world unit; dipakai supaya skala hero konsisten. */
+const SPRITE_WORLD_SIZE = 8.5;
 
 const TEAM_COLOR: Record<TeamId, string> = {
   team_merah: '#ef5350',
@@ -107,10 +138,6 @@ const TEAM_COLOR: Record<TeamId, string> = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function damp(current: number, target: number, lambda: number, dt: number): number {
-  return current + (target - current) * (1 - Math.exp(-lambda * dt));
 }
 
 function loadImage(src: string): HTMLImageElement {
@@ -153,36 +180,63 @@ class CanvasFightRenderer implements MobaRenderer {
   private width = 1;
   private height = 1;
   private dpr = 1;
+  /** Piksel per world unit. */
   private scale = 10;
-  private camX = 0;
-  private camZ = 6;
+  private stageScale = 1;
+  private stageX = 0;
+  private stageY = 0;
+  private stageW = STAGE_WIDTH;
+  private stageH = STAGE_HEIGHT;
+  private groundY = 0;
   private shake = 0;
   private elapsedMs = 0;
+  /** Waktu animasi lokal yang ikut berhenti saat hit-stop. */
+  private animMs = 0;
+  private serverMs = 0;
 
   private localHeroId = '';
-  private hasLocal = false;
+  private displayState: ClientMobaState | null = null;
+  private frozenState: ClientMobaState | null = null;
+  private freezeUntil = 0;
 
   private aimX = 0;
   private aimZ = 0;
   private aimVisible = false;
 
-  private readonly portraits = new Map<string, HTMLImageElement>();
-  private readonly mapImage = loadImage('/assets/maps/design_map.png');
+  private readonly stageImage = loadImage('/assets/maps/stage-kampung.png');
   private readonly explosionImage = loadImage('/assets/effects/efek_ledakan.png');
   private readonly skillAtlasImage = new Image();
-  private readonly skillAnimations = new Map<string, SkillAnimationRow>();
+  private readonly skillAnimations = new Map<string, AtlasAnimRow>();
   private skillAtlasReady = false;
+
+  private readonly spriteAtlasImage = new Image();
+  private readonly spriteAnimations = new Map<string, AtlasAnimRow>();
+  private spriteAtlasReady = false;
+  private spriteAnchorX = 64;
+  private spriteAnchorY = 116;
+  private readonly flashCanvas = document.createElement('canvas');
+  private readonly flashCtx: CanvasRenderingContext2D | null;
 
   private readonly seenEffects = new Set<string>();
   private readonly particles: Particle[] = [];
   private readonly texts: FloatingText[] = [];
   private readonly skillAnims: SkillAnimInstance[] = [];
+  private readonly previousHp = new Map<string, number>();
+  private readonly hitReactions = new Map<string, HitReaction>();
+  private readonly spriteTracks = new Map<string, SpriteTrack>();
+  private readonly ultimateUntil = new Map<string, number>();
   private explosionFlash: ExplosionFlash | null = null;
   private ultimateCutIn: UltimateCutIn | null = null;
 
   private mounted = false;
   private disposed = false;
   private readonly handleResize = (): void => this.resize();
+
+  constructor() {
+    this.flashCanvas.width = SPRITE_CELL;
+    this.flashCanvas.height = SPRITE_CELL;
+    this.flashCtx = this.flashCanvas.getContext('2d');
+  }
 
   mount(container: HTMLElement): void {
     if (this.mounted || this.disposed) return;
@@ -199,7 +253,11 @@ class CanvasFightRenderer implements MobaRenderer {
     window.addEventListener('resize', this.handleResize);
     this.mounted = true;
     this.resize();
-    void this.loadSkillAtlas();
+    void this.loadAtlases();
+  }
+
+  private async loadAtlases(): Promise<void> {
+    await Promise.all([this.loadSkillAtlas(), this.loadSpriteAtlas()]);
   }
 
   private async loadSkillAtlas(): Promise<void> {
@@ -217,6 +275,30 @@ class CanvasFightRenderer implements MobaRenderer {
     }
   }
 
+  private async loadSpriteAtlas(): Promise<void> {
+    try {
+      const response = await fetch('/assets/characters/sprites/manifest.json');
+      if (!response.ok) return;
+      const manifest = (await response.json()) as SpriteAtlasManifest;
+      this.spriteAtlasImage.src = `/assets/characters/sprites/${manifest.image}`;
+      this.spriteAnchorX = manifest.cell.anchorX;
+      this.spriteAnchorY = manifest.cell.anchorY;
+      for (const [key, row] of Object.entries(manifest.frame_layout.rows)) {
+        const timing = manifest.animation.rows[key];
+        if (!row.frames?.length) continue;
+        this.spriteAnimations.set(key, {
+          ...row,
+          fps: timing?.fps ?? row.fps ?? 8,
+          loop: timing?.loop ?? row.loop ?? false,
+          durationMs: timing?.durationMs ?? row.durationMs,
+        });
+      }
+      this.spriteAtlasReady = true;
+    } catch {
+      // Fallback capsule dipakai jika manifest/atlas karakter tidak tersedia.
+    }
+  }
+
   resize(): void {
     if (!this.container || !this.canvas || !this.ctx || this.disposed) return;
     this.width = Math.max(1, this.container.clientWidth || window.innerWidth);
@@ -226,10 +308,14 @@ class CanvasFightRenderer implements MobaRenderer {
     this.canvas.height = Math.round(this.height * this.dpr);
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
-    const aspect = this.width / this.height;
-    const viewHeight = aspect < 0.9 ? VIEW_HEIGHT * (0.9 / aspect) : VIEW_HEIGHT;
-    this.scale = this.height / viewHeight;
-    this.clampCamera();
+    // Rasio stage dipertahankan; kelebihan tinggi diisi langit/tanah, bukan diparallax.
+    this.stageScale = this.width / STAGE_WIDTH;
+    this.stageW = STAGE_WIDTH * this.stageScale;
+    this.stageH = STAGE_HEIGHT * this.stageScale;
+    this.stageX = (this.width - this.stageW) / 2;
+    this.stageY = (this.height - this.stageH) / 2;
+    this.groundY = this.stageY + STAGE_GROUND_Y * this.stageScale;
+    this.scale = this.stageW / FIGHT_WORLD_WIDTH;
   }
 
   screenToGround(clientX: number, clientY: number): { x: number; z: number } | null {
@@ -239,8 +325,8 @@ class CanvasFightRenderer implements MobaRenderer {
     const sx = ((clientX - rect.left) / rect.width) * this.width;
     const sy = ((clientY - rect.top) / rect.height) * this.height;
     return {
-      x: (sx - this.width / 2) / this.scale + this.camX,
-      z: (this.height / 2 - sy) / this.scale + this.camZ,
+      x: clamp((sx - this.width / 2) / this.scale, -FIGHT_HALF_WIDTH, FIGHT_HALF_WIDTH),
+      z: clamp((this.groundY - sy) / this.scale, 0, FIGHT_WORLD_HEIGHT),
     };
   }
 
@@ -254,28 +340,38 @@ class CanvasFightRenderer implements MobaRenderer {
     if (!this.mounted || !this.ctx || this.disposed) return;
     this.localHeroId = localHeroId;
     const dt = clamp(dtMs, 0, 100);
-    const dtSeconds = dt / 1000;
     this.elapsedMs += dt;
+    if (state) this.serverMs = state.elapsedMs;
 
     if (state) {
-      const local = state.heroes[localHeroId] ?? null;
-      this.hasLocal = Boolean(local);
-      if (local) {
-        this.camX = damp(this.camX, local.x, 7, dtSeconds);
-        this.camZ = damp(this.camZ, clamp(local.z + 5, 5, FIGHT_WORLD_HEIGHT - 8), 5, dtSeconds);
-      }
       this.syncEffects(state);
+      this.detectHitReactions(state);
     } else {
-      this.hasLocal = false;
-      this.camX = damp(this.camX, 0, 4, dtSeconds);
-      this.camZ = damp(this.camZ, 6, 4, dtSeconds);
+      this.displayState = null;
+      this.frozenState = null;
+      this.freezeUntil = 0;
       this.seenEffects.clear();
+      this.previousHp.clear();
+      this.hitReactions.clear();
+      this.spriteTracks.clear();
+      this.ultimateUntil.clear();
     }
 
-    this.shake = Math.max(0, this.shake - dtSeconds * 2.6);
-    this.clampCamera();
+    const frozen = this.elapsedMs < this.freezeUntil;
+    if (!frozen) {
+      this.displayState = state;
+      this.frozenState = null;
+    } else if (!this.frozenState && state) {
+      this.frozenState = state;
+    }
+    const drawState = frozen ? this.frozenState ?? state : state;
+
+    // Hit-stop menghentikan animasi/partikel, tetapi tidak mengubah state jaringan.
+    const dtSeconds = frozen ? 0 : dt / 1000;
+    this.animMs += dtSeconds * 1000;
+    this.shake = Math.max(0, this.shake - dtSeconds * 28);
     this.updateParticles(dtSeconds);
-    this.draw(state);
+    this.draw(drawState);
   }
 
   dispose(): void {
@@ -286,7 +382,11 @@ class CanvasFightRenderer implements MobaRenderer {
     this.texts.length = 0;
     this.skillAnims.length = 0;
     this.skillAnimations.clear();
-    this.portraits.clear();
+    this.spriteAnimations.clear();
+    this.previousHp.clear();
+    this.hitReactions.clear();
+    this.spriteTracks.clear();
+    this.ultimateUntil.clear();
     this.seenEffects.clear();
     this.ultimateCutIn = null;
     this.canvas?.parentElement?.removeChild(this.canvas);
@@ -297,6 +397,39 @@ class CanvasFightRenderer implements MobaRenderer {
   }
 
   // -------------------------------------------------------------- state sync
+
+  /** Hit-stop hanya membekukan tampilan; state server/network tetap berjalan. */
+  private detectHitReactions(state: ClientMobaState): void {
+    const present = new Set<string>();
+    for (const hero of Object.values(state.heroes)) {
+      present.add(hero.id);
+      const previous = this.previousHp.get(hero.id);
+      if (previous !== undefined && hero.hp < previous - 0.01) {
+        const amount = previous - hero.hp;
+        const heavy = amount >= Math.max(16, hero.maxHp * 0.12);
+        const local = hero.id === this.localHeroId;
+        this.hitReactions.set(hero.id, {
+          flashUntil: this.elapsedMs + (heavy ? 190 : 120),
+          blinkUntil: this.elapsedMs + 900,
+        });
+        this.freezeUntil = Math.max(this.freezeUntil, this.elapsedMs + (heavy ? 90 : 45));
+        this.frozenState = state;
+        this.shake = Math.min(9, this.shake + (heavy ? 5.5 : 2.5));
+        this.spawnBurst(
+          hero.x,
+          hero.z + 1.4,
+          local ? '#ff5252' : '#ffffff',
+          heavy ? 18 : 10,
+          heavy ? 1.8 : 1.3,
+          heavy ? 7 : 5,
+        );
+      }
+      this.previousHp.set(hero.id, hero.hp);
+    }
+    for (const id of Array.from(this.previousHp.keys())) {
+      if (!present.has(id)) this.previousHp.delete(id);
+    }
+  }
 
   private syncEffects(state: ClientMobaState): void {
     const active = new Set<string>();
@@ -326,33 +459,28 @@ class CanvasFightRenderer implements MobaRenderer {
           z: effect.z,
           radius,
           dirX: effect.dirX ?? 1,
-          life: row.durationMs,
-          maxLife: row.durationMs,
+          life: row.durationMs ?? 600,
+          maxLife: row.durationMs ?? 600,
         });
         if (this.skillAnims.length > 16) this.skillAnims.shift();
-        if (skillKey.endsWith(':ultimate')) {
-          const heroId = skillKey.split(':')[0] ?? '';
-          this.ultimateCutIn = {
-            label: HEROES[heroId]?.name ?? heroId,
-            color,
-            life: 900,
-            maxLife: 900,
-          };
-          this.shake = Math.min(1.6, this.shake + 0.8);
-        }
+      }
+      if (skillKey.endsWith(':ultimate')) {
+        const heroId = skillKey.split(':')[0] ?? '';
+        this.ultimateUntil.set(heroId, this.serverMs + 700);
+        this.ultimateCutIn = {
+          label: HEROES[heroId]?.name ?? heroId,
+          color,
+          life: 900,
+          maxLife: 900,
+        };
+        this.shake = Math.min(9, this.shake + 4.2);
       }
     }
     switch (effect.kind) {
       case 'explosion':
       case 'boss_spawn':
         this.spawnBurst(effect.x, effect.z, color, 18, radius, 9);
-        this.explosionFlash = {
-          x: effect.x,
-          z: effect.z,
-          radius,
-          life: 360,
-          maxLife: 360,
-        };
+        this.explosionFlash = { x: effect.x, z: effect.z, radius, life: 360, maxLife: 360 };
         this.texts.push({
           x: effect.x,
           z: effect.z + 2,
@@ -361,7 +489,11 @@ class CanvasFightRenderer implements MobaRenderer {
           life: 850,
           maxLife: 850,
         });
-        this.shake = Math.min(1.4, this.shake + 0.6);
+        this.shake = Math.min(9, this.shake + 3.6);
+        break;
+      case 'hit':
+        this.spawnBurst(effect.x, effect.z, '#fffde7', 10, 1.5, 6);
+        this.shake = Math.min(9, this.shake + 1.2);
         break;
       case 'ko':
         this.spawnBurst(effect.x, effect.z, '#33373b', 16, radius * 0.7, 5);
@@ -373,7 +505,7 @@ class CanvasFightRenderer implements MobaRenderer {
           life: 1000,
           maxLife: 1000,
         });
-        this.shake = Math.min(1.4, this.shake + 0.4);
+        this.shake = Math.min(9, this.shake + 2.2);
         break;
       case 'levelup':
         this.texts.push({
@@ -422,7 +554,7 @@ class CanvasFightRenderer implements MobaRenderer {
       const angle = Math.random() * TAU;
       const magnitude = speed * (0.35 + Math.random() * 0.7);
       const spread = radius * Math.sqrt(Math.random()) * 0.4;
-      const life = 350 + Math.random() * 450;
+      const life = 260 + Math.random() * 380;
       this.particles.push({
         x: x + Math.cos(angle) * spread,
         z: z + Math.sin(angle) * spread,
@@ -430,7 +562,7 @@ class CanvasFightRenderer implements MobaRenderer {
         vz: Math.sin(angle) * magnitude,
         life,
         maxLife: life,
-        size: 0.16 + Math.random() * 0.28,
+        size: 0.12 + Math.random() * 0.2,
         color,
       });
     }
@@ -471,24 +603,14 @@ class CanvasFightRenderer implements MobaRenderer {
     }
   }
 
-  private clampCamera(): void {
-    const halfW = this.width / (2 * this.scale);
-    const halfH = this.height / (2 * this.scale);
-    this.camX =
-      halfW * 2 >= FIGHT_HALF_WIDTH * 2
-        ? 0
-        : clamp(this.camX, -FIGHT_HALF_WIDTH + halfW, FIGHT_HALF_WIDTH - halfW);
-    this.camZ = clamp(this.camZ, halfH * 0.55, FIGHT_WORLD_HEIGHT - halfH * 0.35);
-  }
-
   // ------------------------------------------------------------------ drawing
 
   private sx(x: number): number {
-    return this.width / 2 + (x - this.camX) * this.scale;
+    return this.width / 2 + x * this.scale;
   }
 
   private sy(z: number): number {
-    return this.height / 2 - (z - this.camZ) * this.scale;
+    return this.groundY - z * this.scale;
   }
 
   private draw(state: ClientMobaState | null): void {
@@ -496,14 +618,15 @@ class CanvasFightRenderer implements MobaRenderer {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.width, this.height);
 
+    // Overscan kecil supaya shake tidak membuka pinggiran kosong.
     const shakeX = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 2 : 0;
     const shakeY = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 2 : 0;
     ctx.save();
     ctx.translate(shakeX, shakeY);
 
-    this.drawSky();
-    this.drawBackdrop();
     this.drawStage();
+    this.drawPlatforms();
+    this.drawSpawnMarkers();
     if (state) {
       this.drawShadows(state);
       this.drawProjectiles(state);
@@ -518,256 +641,76 @@ class CanvasFightRenderer implements MobaRenderer {
     ctx.restore();
   }
 
-  private drawSky(): void {
-    const ctx = this.ctx!;
-    const gradient = ctx.createLinearGradient(0, 0, 0, this.height);
-    gradient.addColorStop(0, '#7fd1f0');
-    gradient.addColorStop(0.55, '#ffd9a0');
-    gradient.addColorStop(1, '#f6b26b');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, this.width, this.height);
-
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    for (let i = 0; i < 5; i += 1) {
-      const x = ((i * 233 - this.camX * 8) % (this.width + 320)) - 160;
-      const y = this.height * 0.12 + (i % 2) * 28;
-      roundedRect(ctx, x, y, 110, 26, 13);
-      ctx.fill();
-    }
-
-    ctx.fillStyle = 'rgba(46,110,74,0.28)';
-    ctx.beginPath();
-    ctx.moveTo(0, this.height);
-    for (let x = 0; x <= this.width; x += 70) {
-      const hill = this.height * 0.58 + Math.sin((x + this.camX * 10) / 130) * 26;
-      ctx.lineTo(x, hill);
-    }
-    ctx.lineTo(this.width, this.height);
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  private drawBackdrop(): void {
-    const ctx = this.ctx!;
-    if (imageReady(this.mapImage)) {
-      ctx.save();
-      ctx.globalAlpha = 0.1;
-      const y = this.sy(FIGHT_WORLD_HEIGHT);
-      const h = this.sy(0) - y;
-      const drift = -this.camX * this.scale * 0.08;
-      ctx.drawImage(
-        this.mapImage,
-        this.sx(-FIGHT_HALF_WIDTH) + drift,
-        y,
-        FIGHT_HALF_WIDTH * 2 * this.scale,
-        h,
-      );
-      ctx.restore();
-    }
-
-    this.drawFarKampung();
-    this.drawFestivalLayer();
-
-    for (const team of ['team_merah', 'team_putih'] as const) {
-      const spawn = FIGHT_SPAWNS[team];
-      const x = this.sx(spawn.x);
-      const y = this.sy(0);
-      ctx.fillStyle = team === 'team_merah' ? 'rgba(239,83,80,0.28)' : 'rgba(245,245,245,0.45)';
-      ctx.fillRect(x - 8 * this.scale, y - 10 * this.scale, 16 * this.scale, 10 * this.scale);
-      ctx.strokeStyle = team === 'team_merah' ? '#b71c1c' : '#9e9e9e';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x - 8 * this.scale, y - 10 * this.scale, 16 * this.scale, 10 * this.scale);
-    }
-  }
-
-  /** Siluet rumah kampung di kejauhan (parallax lambat). */
-  private drawFarKampung(): void {
-    const ctx = this.ctx!;
-    const baseY = this.sy(6.2);
-    const tile = 13 * this.scale;
-    const offset = (((-this.camX * this.scale * 0.12) % tile) + tile) % tile;
-    ctx.save();
-    ctx.globalAlpha = 0.4;
-    for (let i = -2; i <= Math.ceil(this.width / tile) + 2; i += 1) {
-      const x = i * tile + offset;
-      const w = tile * 0.62;
-      const h = (2.1 + (Math.abs(i) % 3) * 0.45) * this.scale;
-      ctx.fillStyle = '#2e5d49';
-      ctx.fillRect(x, baseY - h, w, h);
-      ctx.beginPath();
-      ctx.moveTo(x - 0.1 * this.scale, baseY - h);
-      ctx.lineTo(x + w / 2, baseY - h - 1.2 * this.scale);
-      ctx.lineTo(x + w + 0.1 * this.scale, baseY - h);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,224,130,0.42)';
-      ctx.fillRect(x + w * 0.24, baseY - h * 0.62, w * 0.18, h * 0.22);
-      ctx.fillRect(x + w * 0.58, baseY - h * 0.62, w * 0.18, h * 0.22);
-    }
-    ctx.restore();
-  }
-
-  /** Gapura, kios, dan lampu festival di lapisan tengah (parallax sedang). */
-  private drawFestivalLayer(): void {
-    const ctx = this.ctx!;
-    const drift = -this.camX * this.scale * 0.32;
-    const baseY = this.sy(3.2);
-    const gateX = this.width / 2 + drift;
-    const gateW = 9 * this.scale;
-    const gateH = 6.4 * this.scale;
-
-    ctx.save();
-    ctx.globalAlpha = 0.78;
-    ctx.fillStyle = '#8d5524';
-    ctx.fillRect(gateX - gateW / 2, baseY - gateH, 1.1 * this.scale, gateH);
-    ctx.fillRect(gateX + gateW / 2 - 1.1 * this.scale, baseY - gateH, 1.1 * this.scale, gateH);
-    ctx.fillStyle = '#b71c1c';
-    ctx.fillRect(gateX - gateW / 2 - 0.35 * this.scale, baseY - gateH, gateW + 0.7 * this.scale, 1 * this.scale);
-    ctx.fillStyle = '#6d4c41';
-    ctx.beginPath();
-    ctx.moveTo(gateX - gateW / 2 - 0.8 * this.scale, baseY - gateH);
-    ctx.lineTo(gateX, baseY - gateH - 1.6 * this.scale);
-    ctx.lineTo(gateX + gateW / 2 + 0.8 * this.scale, baseY - gateH);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#fff8e1';
-    roundedRect(ctx, gateX - 2.6 * this.scale, baseY - gateH + 1.25 * this.scale, 5.2 * this.scale, 1.15 * this.scale, 4);
-    ctx.fill();
-    ctx.fillStyle = '#b71c1c';
-    ctx.font = `800 ${Math.max(9, 0.46 * this.scale)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText('GAPURA KAMPUNG', gateX, baseY - gateH + 2.05 * this.scale);
-    ctx.restore();
-
-    const tile = 20 * this.scale;
-    const offset = (((drift * 1.15) % tile) + tile) % tile;
-    for (let i = -2; i <= Math.ceil(this.width / tile) + 2; i += 1) {
-      this.drawKios(i * tile + offset, baseY + 0.6 * this.scale);
-    }
-    this.drawFestivalLights();
-  }
-
-  private drawKios(x: number, baseY: number): void {
-    const ctx = this.ctx!;
-    const w = 5.2 * this.scale;
-    const h = 2.6 * this.scale;
-    ctx.save();
-    ctx.globalAlpha = 0.7;
-    ctx.fillStyle = '#5d4037';
-    ctx.fillRect(x - w / 2, baseY - h, 0.32 * this.scale, h);
-    ctx.fillRect(x + w / 2 - 0.32 * this.scale, baseY - h, 0.32 * this.scale, h);
-    const stripes = 6;
-    for (let s = 0; s < stripes; s += 1) {
-      ctx.fillStyle = s % 2 === 0 ? '#e53935' : '#fff8e1';
-      ctx.fillRect(x - w / 2 + (s * w) / stripes, baseY - h - 0.7 * this.scale, w / stripes, 0.7 * this.scale);
-    }
-    ctx.fillStyle = '#8d6e63';
-    ctx.fillRect(x - w / 2, baseY - 1 * this.scale, w, 0.42 * this.scale);
-    ctx.restore();
-  }
-
-  private drawFestivalLights(): void {
-    const ctx = this.ctx!;
-    const y = this.height * 0.1;
-    const shift = ((-this.camX * 0.55 * this.scale) % (8 * this.scale) + 8 * this.scale) % (8 * this.scale);
-    const colors = ['#ffd54f', '#ef5350', '#4fc3f7', '#81c784'];
-    ctx.save();
-    ctx.strokeStyle = 'rgba(60,50,40,0.5)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-shift, y);
-    ctx.quadraticCurveTo(this.width / 2, y + 46, this.width + shift, y);
-    ctx.stroke();
-    for (let i = 0; i <= 18; i += 1) {
-      const t = i / 18;
-      const x = -shift + t * (this.width + shift * 2);
-      const bulbY = y + Math.sin(t * Math.PI) * 42;
-      const color = colors[i % colors.length]!;
-      ctx.fillStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(x, bulbY, 3.2, 0, TAU);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
+  /** Satu gambar stage utuh; tidak ada layer yang bergerak mengikuti kamera. */
   private drawStage(): void {
     const ctx = this.ctx!;
-    const groundY = this.sy(FIGHT_GROUND_Z);
-    const left = this.sx(-FIGHT_HALF_WIDTH);
-    const worldW = FIGHT_HALF_WIDTH * 2 * this.scale;
+    const sky = ctx.createLinearGradient(0, 0, 0, this.height);
+    sky.addColorStop(0, '#74c9ec');
+    sky.addColorStop(0.65, '#bfe3ef');
+    sky.addColorStop(1, '#f6b26b');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, this.width, this.height);
 
-    ctx.fillStyle = '#5d4037';
-    ctx.fillRect(left, groundY, worldW, 10 * this.scale);
-    ctx.fillStyle = '#8d6e63';
-    ctx.fillRect(left, groundY + 0.55 * this.scale, worldW, 9 * this.scale);
-    ctx.strokeStyle = 'rgba(62,39,35,0.28)';
-    ctx.lineWidth = 1;
-    for (let x = left; x <= left + worldW; x += 1.6 * this.scale) {
-      ctx.beginPath();
-      ctx.moveTo(x, groundY + 0.55 * this.scale);
-      ctx.lineTo(x, groundY + 9.5 * this.scale);
-      ctx.stroke();
+    const bottomY = this.stageY + this.stageH;
+    if (bottomY < this.height) {
+      ctx.fillStyle = '#3f6f4a';
+      ctx.fillRect(0, bottomY - 1, this.width, this.height - bottomY + 1);
     }
+
+    if (imageReady(this.stageImage)) {
+      const pad = 8;
+      ctx.drawImage(
+        this.stageImage,
+        this.stageX - pad,
+        this.stageY - pad,
+        this.stageW + pad * 2,
+        this.stageH + pad * 2,
+      );
+      return;
+    }
+
+    // Fallback saat gambar stage belum termuat.
+    ctx.fillStyle = 'rgba(79,132,104,0.55)';
+    ctx.fillRect(0, this.groundY - 3 * this.scale, this.width, 3 * this.scale);
+    ctx.fillStyle = '#b0855b';
+    ctx.fillRect(0, this.groundY, this.width, 9 * this.scale);
     ctx.fillStyle = '#66bb6a';
-    ctx.fillRect(left, groundY - 0.35 * this.scale, worldW, 0.7 * this.scale);
-    const stripe = 0.8 * this.scale;
-    for (let x = left, i = 0; x < left + worldW; x += stripe, i += 1) {
-      ctx.fillStyle = i % 2 === 0 ? '#e53935' : '#fff8e1';
-      ctx.fillRect(x, groundY + 0.15 * this.scale, stripe, 0.4 * this.scale);
-    }
+    ctx.fillRect(0, this.groundY - 0.35 * this.scale, this.width, 0.7 * this.scale);
+  }
 
+  /** Ledge tipis sebagai penanda platform gameplay, bukan objek latar baru. */
+  private drawPlatforms(): void {
+    const ctx = this.ctx!;
+    ctx.save();
     for (const platform of FIGHT_PLATFORMS) {
       const x = this.sx(platform.x - platform.w / 2);
       const y = this.sy(platform.z);
       const w = platform.w * this.scale;
-      const h = 0.9 * this.scale;
-      ctx.fillStyle = 'rgba(62,39,35,0.5)';
-      ctx.fillRect(x + w * 0.12, y + h, 0.3 * this.scale, 1.2 * this.scale);
-      ctx.fillRect(x + w * 0.82, y + h, 0.3 * this.scale, 1.2 * this.scale);
-      ctx.fillStyle = '#8d5524';
-      roundedRect(ctx, x, y, w, h, 5);
-      ctx.fill();
-      ctx.strokeStyle = '#5d4037';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      const stripes = 8;
-      for (let s = 0; s < stripes; s += 1) {
-        ctx.fillStyle = s % 2 === 0 ? '#e53935' : '#fff8e1';
-        ctx.fillRect(x + (s * w) / stripes, y - 0.25 * this.scale, w / stripes, 0.45 * this.scale);
-      }
-      ctx.fillStyle = 'rgba(18,22,30,0.72)';
-      const labelW = Math.max(44, platform.label.length * 0.42 * this.scale + 14);
-      roundedRect(ctx, x + w / 2 - labelW / 2, y + h + 5, labelW, 17, 4);
-      ctx.fill();
+      ctx.globalAlpha = 0.4;
       ctx.fillStyle = '#fff8e1';
-      ctx.font = `600 ${Math.max(9, 0.45 * this.scale)}px sans-serif`;
+      roundedRect(ctx, x, y - 0.18 * this.scale, w, 0.36 * this.scale, 4);
+      ctx.fill();
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = '#3e2723';
+      ctx.font = `700 ${Math.max(9, 0.38 * this.scale)}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(platform.label, x + w / 2, y + h + 17);
+      ctx.fillText(platform.label, x + w / 2, y - 0.55 * this.scale);
     }
-
-    const ringX = this.sx(0);
-    const ringY = this.sy(FIGHT_GROUND_Z + 4.6);
-    ctx.save();
-    ctx.globalAlpha = 0.45;
-    ctx.strokeStyle = '#ffd54f';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(ringX, ringY, 5.2 * this.scale, Math.PI, TAU);
-    ctx.stroke();
-    ctx.globalAlpha = 0.25;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(ringX, ringY, 4 * this.scale, Math.PI, TAU);
-    ctx.stroke();
-    ctx.globalAlpha = 0.7;
-    ctx.fillStyle = '#fff8e1';
-    ctx.font = `800 ${Math.max(9, 0.45 * this.scale)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText('RING KAMPUNG', ringX, ringY + 0.9 * this.scale);
     ctx.restore();
+  }
+
+  private drawSpawnMarkers(): void {
+    const ctx = this.ctx!;
+    for (const team of ['team_merah', 'team_putih'] as const) {
+      const spawn = FIGHT_SPAWNS[team];
+      const x = this.sx(spawn.x);
+      const y = this.sy(0);
+      ctx.fillStyle = team === 'team_merah' ? 'rgba(239,83,80,0.22)' : 'rgba(245,245,245,0.32)';
+      ctx.fillRect(x - 7 * this.scale, y - 8 * this.scale, 14 * this.scale, 8 * this.scale);
+      ctx.strokeStyle = team === 'team_merah' ? '#b71c1c' : '#9e9e9e';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - 7 * this.scale, y - 8 * this.scale, 14 * this.scale, 8 * this.scale);
+    }
   }
 
   private drawShadows(state: ClientMobaState): void {
@@ -818,22 +761,59 @@ class CanvasFightRenderer implements MobaRenderer {
     for (const hero of sorted) this.drawHero(hero);
   }
 
+  private resolveSpriteState(hero: MobaHeroView): string {
+    if (!hero.alive || hero.anim === 'dead') return 'down';
+    if (hero.anim === 'dash') return 'run';
+    if (hero.anim === 'cast') {
+      return this.serverMs < (this.ultimateUntil.get(hero.id) ?? 0) ? 'ultimate' : 'cast';
+    }
+    if (hero.anim === 'hurt') return 'hurt';
+    if (hero.anim === 'jump') return 'jump';
+    if (hero.anim === 'attack') return 'attack';
+    if (hero.anim === 'walk') return 'walk';
+    return 'idle';
+  }
+
+  private spriteFrameFor(hero: MobaHeroView): FrameRect | null {
+    if (!this.spriteAtlasReady || !imageReady(this.spriteAtlasImage)) return null;
+    const stateName = this.resolveSpriteState(hero);
+    const key = `${hero.heroId}:${stateName}`;
+    const row = this.spriteAnimations.get(key) ?? this.spriteAnimations.get(`${hero.heroId}:idle`);
+    if (!row?.frames.length) return null;
+
+    const track = this.spriteTracks.get(hero.id);
+    if (!track || track.key !== key) {
+      this.spriteTracks.set(hero.id, { key, startedAt: this.animMs });
+    }
+    const startedAt = this.spriteTracks.get(hero.id)!.startedAt;
+    const frameMs = 1000 / Math.max(1, row.fps ?? 8);
+    const elapsed = Math.max(0, this.animMs - startedAt);
+    const rawIndex = Math.floor(elapsed / frameMs);
+    const index = row.loop
+      ? rawIndex % row.frames.length
+      : Math.min(row.frames.length - 1, rawIndex);
+    return row.frames[Math.max(0, index)] ?? null;
+  }
+
   private drawHero(hero: MobaHeroView): void {
     const ctx = this.ctx!;
     const x = this.sx(hero.x);
     const feetY = this.sy(hero.z);
-    const bodyW = 2.2 * this.scale;
-    const bodyH = 2.6 * this.scale;
-    const topY = feetY - bodyH;
     const eliminated = !hero.alive && hero.stocks <= 0;
     const respawning = !hero.alive && hero.stocks > 0;
-    const local = hero.id === this.localHeroId && this.hasLocal;
+    const local = hero.id === this.localHeroId && Boolean(this.displayState || this.frozenState);
     const theme = HEROES[hero.heroId]?.colorTheme ?? TEAM_COLOR[hero.team];
+    const reaction = this.hitReactions.get(hero.id);
+    const flashUntil = reaction?.flashUntil ?? 0;
+    const blinkUntil = reaction?.blinkUntil ?? 0;
+
+    let alpha = 1;
+    if (eliminated) alpha = 0.28;
+    else if (respawning) alpha = 0.5;
+    else if (blinkUntil > this.elapsedMs && Math.floor(this.elapsedMs / 80) % 2 === 0) alpha = 0.45;
 
     ctx.save();
-    if (eliminated) ctx.globalAlpha = 0.28;
-    else if (respawning) ctx.globalAlpha = 0.45;
-    else if (this.elapsedMs < hero.hitstunUntil) ctx.globalAlpha = 0.72;
+    ctx.globalAlpha = alpha;
 
     if (local) {
       ctx.strokeStyle = '#ffd54f';
@@ -843,44 +823,30 @@ class CanvasFightRenderer implements MobaRenderer {
       ctx.stroke();
     }
 
-    ctx.fillStyle = hero.team === 'team_merah' ? '#c62828' : '#eceff1';
-    roundedRect(ctx, x - bodyW / 2, topY, bodyW, bodyH, 0.55 * this.scale);
-    ctx.fill();
-    ctx.strokeStyle = TEAM_COLOR[hero.team];
-    ctx.lineWidth = 3;
-    ctx.stroke();
-
-    ctx.fillStyle = theme;
-    roundedRect(ctx, x - bodyW / 2, topY + bodyH * 0.58, bodyW, bodyH * 0.42, 0.35 * this.scale);
-    ctx.fill();
-
-    const portrait = this.portraitFor(hero.heroId);
-    const faceR = 0.72 * this.scale;
-    if (imageReady(portrait)) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(x, topY + bodyH * 0.34, faceR, 0, TAU);
-      ctx.clip();
-      ctx.drawImage(portrait, x - faceR, topY + bodyH * 0.34 - faceR, faceR * 2, faceR * 2);
-      ctx.restore();
+    const frame = this.spriteFrameFor(hero);
+    if (frame) {
+      const size = SPRITE_WORLD_SIZE * this.scale;
+      this.drawSprite(
+        frame,
+        x,
+        feetY,
+        size,
+        hero.facing,
+        flashUntil > this.elapsedMs ? (local ? '#ff3b30' : '#ffffff') : null,
+        clamp((flashUntil - this.elapsedMs) / 120, 0, 1),
+        alpha,
+      );
+    } else {
+      this.drawFallbackBody(hero, x, feetY, theme, local, alpha);
     }
-    ctx.strokeStyle = '#fffde7';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, topY + bodyH * 0.34, faceR, 0, TAU);
-    ctx.stroke();
+    ctx.restore();
 
-    ctx.fillStyle = '#111827';
-    const arrowX = x + hero.facing * (bodyW / 2 + 0.35 * this.scale);
-    ctx.beginPath();
-    ctx.moveTo(arrowX, feetY - bodyH * 0.55);
-    ctx.lineTo(arrowX + hero.facing * 0.55 * this.scale, feetY - bodyH * 0.42);
-    ctx.lineTo(arrowX, feetY - bodyH * 0.29);
-    ctx.closePath();
-    ctx.fill();
-
+    const spriteH = SPRITE_WORLD_SIZE * this.scale * (116 / SPRITE_CELL);
+    const topY = feetY - spriteH;
     const barW = 2.6 * this.scale;
     const barY = topY - 0.75 * this.scale;
+    ctx.save();
+    ctx.globalAlpha = eliminated ? 0.45 : 1;
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(x - barW / 2, barY, barW, 0.32 * this.scale);
     const ratio = clamp(hero.hp / Math.max(1, hero.maxHp), 0, 1);
@@ -890,13 +856,22 @@ class CanvasFightRenderer implements MobaRenderer {
     for (let i = 0; i < hero.maxStocks; i += 1) {
       ctx.fillStyle = i < hero.stocks ? '#ffd54f' : 'rgba(255,255,255,0.25)';
       ctx.beginPath();
-      ctx.arc(x - (hero.maxStocks - 1) * 0.32 * this.scale + i * 0.64 * this.scale, barY - 0.45 * this.scale, 0.2 * this.scale, 0, TAU);
+      ctx.arc(
+        x - (hero.maxStocks - 1) * 0.32 * this.scale + i * 0.64 * this.scale,
+        barY - 0.45 * this.scale,
+        0.2 * this.scale,
+        0,
+        TAU,
+      );
       ctx.fill();
     }
 
     ctx.font = `600 ${Math.max(9, 0.42 * this.scale)}px sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#0f172a';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(15,23,42,0.75)';
+    ctx.strokeText(hero.name, x, barY - 0.85 * this.scale);
+    ctx.fillStyle = '#ffffff';
     ctx.fillText(hero.name, x, barY - 0.85 * this.scale);
 
     if (hero.combo > 1 && hero.id === this.localHeroId) {
@@ -904,7 +879,6 @@ class CanvasFightRenderer implements MobaRenderer {
       ctx.font = `800 ${Math.max(11, 0.55 * this.scale)}px sans-serif`;
       ctx.fillText(`${hero.combo}x COMBO`, x, topY - 1.6 * this.scale);
     }
-
     if (respawning) {
       ctx.fillStyle = '#0f172a';
       ctx.font = `700 ${Math.max(10, 0.5 * this.scale)}px sans-serif`;
@@ -913,13 +887,109 @@ class CanvasFightRenderer implements MobaRenderer {
     ctx.restore();
   }
 
-  private portraitFor(heroId: string): HTMLImageElement {
-    let image = this.portraits.get(heroId);
-    if (!image) {
-      image = loadImage(heroPortrait(heroId));
-      this.portraits.set(heroId, image);
+  /** Sprite digambar relatif terhadap anchor kaki; flip dilakukan tepat di anchor. */
+  private drawSprite(
+    frame: FrameRect,
+    feetX: number,
+    feetY: number,
+    size: number,
+    facing: number,
+    flashColor: string | null,
+    flashAmount: number,
+    alpha: number,
+  ): void {
+    const ctx = this.ctx!;
+    const ax = (this.spriteAnchorX / SPRITE_CELL) * size;
+    const ay = (this.spriteAnchorY / SPRITE_CELL) * size;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(Math.round(feetX), Math.round(feetY));
+    ctx.scale(facing < 0 ? -1 : 1, 1);
+    ctx.drawImage(
+      this.spriteAtlasImage,
+      frame.x,
+      frame.y,
+      frame.w,
+      frame.h,
+      -ax,
+      -ay,
+      size,
+      size,
+    );
+    if (flashColor && this.flashCtx && flashAmount > 0) {
+      const tinted = this.tintFrame(frame, flashColor);
+      if (tinted) {
+        ctx.globalAlpha = alpha * flashAmount;
+        ctx.drawImage(tinted, -ax, -ay, size, size);
+      }
     }
-    return image;
+    ctx.restore();
+  }
+
+  private tintFrame(frame: FrameRect, color: string): HTMLCanvasElement | null {
+    const ctx = this.flashCtx;
+    if (!ctx || !imageReady(this.spriteAtlasImage)) return null;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.clearRect(0, 0, SPRITE_CELL, SPRITE_CELL);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      this.spriteAtlasImage,
+      frame.x,
+      frame.y,
+      frame.w,
+      frame.h,
+      0,
+      0,
+      SPRITE_CELL,
+      SPRITE_CELL,
+    );
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, SPRITE_CELL, SPRITE_CELL);
+    ctx.globalCompositeOperation = 'source-over';
+    return this.flashCanvas;
+  }
+
+  /** Fallback bila atlas karakter belum siap, bentuk lama tetap dipakai. */
+  private drawFallbackBody(
+    hero: MobaHeroView,
+    x: number,
+    feetY: number,
+    theme: string,
+    local: boolean,
+    alpha: number,
+  ): void {
+    const ctx = this.ctx!;
+    const size = SPRITE_WORLD_SIZE * this.scale;
+    const bodyW = size * 0.46;
+    const bodyH = size * 0.78;
+    const topY = feetY - bodyH;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = hero.team === 'team_merah' ? '#c62828' : '#eceff1';
+    roundedRect(ctx, x - bodyW / 2, topY, bodyW, bodyH, 0.55 * this.scale);
+    ctx.fill();
+    ctx.strokeStyle = TEAM_COLOR[hero.team];
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = theme;
+    roundedRect(ctx, x - bodyW / 2, topY + bodyH * 0.58, bodyW, bodyH * 0.42, 0.35 * this.scale);
+    ctx.fill();
+    ctx.fillStyle = '#111827';
+    const arrowX = x + hero.facing * (bodyW / 2 + 0.35 * this.scale);
+    ctx.beginPath();
+    ctx.moveTo(arrowX, feetY - bodyH * 0.55);
+    ctx.lineTo(arrowX + hero.facing * 0.55 * this.scale, feetY - bodyH * 0.42);
+    ctx.lineTo(arrowX, feetY - bodyH * 0.29);
+    ctx.closePath();
+    ctx.fill();
+    if (local) {
+      ctx.strokeStyle = '#ffd54f';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - bodyW / 2 - 3, topY - 3, bodyW + 6, bodyH + 6);
+    }
+    ctx.restore();
   }
 
   private drawSkillAnims(): void {
@@ -929,7 +999,7 @@ class CanvasFightRenderer implements MobaRenderer {
     for (const anim of this.skillAnims) {
       const elapsed = anim.maxLife - anim.life;
       const frameCount = anim.row.frames.length;
-      const frameDuration = anim.maxLife / frameCount;
+      const frameDuration = anim.maxLife / Math.max(1, frameCount);
       const index = anim.row.loop
         ? Math.floor(elapsed / frameDuration) % frameCount
         : Math.min(frameCount - 1, Math.floor(elapsed / frameDuration));
@@ -940,6 +1010,7 @@ class CanvasFightRenderer implements MobaRenderer {
       const x = this.sx(anim.x) - size / 2;
       const y = this.sy(anim.z) - size / 2;
       ctx.globalAlpha = clamp(anim.life / (anim.maxLife * 0.35), 0, 1);
+      ctx.imageSmoothingEnabled = false;
       ctx.save();
       if (anim.dirX < 0) {
         ctx.translate(x + size, y);
