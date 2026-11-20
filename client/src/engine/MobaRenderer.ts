@@ -4,7 +4,8 @@
  * Konvensi docs/stage-background.md + docs/sprite-runtime.md:
  * - stage = satu gambar 16:9, kamera diam, tanpa parallax/scrolling
  * - hero = sprite frame-based dari atlas + manifest, anchor di kaki, flip di anchor
- * - efek hit = flash, blink, percikan, shake, hit-stop ringan (lihat docs/hit-reactions.md)
+ * - efek hit = flash, blink, percikan kecil, hit-stop ringan (lihat docs/hit-reactions.md)
+ * - tanpa screen shake dan tanpa overlay ledakan/BOOM! (bikin pusing saat beta)
  *
  * API `createMobaRenderer()` dipertahankan.
  */
@@ -51,14 +52,6 @@ interface FloatingText {
   color: string;
   life: number;
   maxLife: number;
-}
-
-interface ExplosionFlash {
-  x: number;
-  z: number;
-  life: number;
-  maxLife: number;
-  radius: number;
 }
 
 interface FrameRect {
@@ -129,7 +122,7 @@ const STAGE_HEIGHT = 720;
 const STAGE_GROUND_Y = 548;
 const SPRITE_CELL = 128;
 /** Tinggi sel sprite dalam world unit; dipakai supaya skala hero konsisten. */
-const SPRITE_WORLD_SIZE = 8.5;
+const SPRITE_WORLD_SIZE = 11.5;
 
 const TEAM_COLOR: Record<TeamId, string> = {
   team_merah: '#ef5350',
@@ -188,7 +181,6 @@ class CanvasFightRenderer implements MobaRenderer {
   private stageW = STAGE_WIDTH;
   private stageH = STAGE_HEIGHT;
   private groundY = 0;
-  private shake = 0;
   private elapsedMs = 0;
   /** Waktu animasi lokal yang ikut berhenti saat hit-stop. */
   private animMs = 0;
@@ -204,7 +196,6 @@ class CanvasFightRenderer implements MobaRenderer {
   private aimVisible = false;
 
   private readonly stageImage = loadImage('/assets/maps/stage-kampung.png');
-  private readonly explosionImage = loadImage('/assets/effects/efek_ledakan.png');
   private readonly skillAtlasImage = new Image();
   private readonly skillAnimations = new Map<string, AtlasAnimRow>();
   private skillAtlasReady = false;
@@ -225,7 +216,6 @@ class CanvasFightRenderer implements MobaRenderer {
   private readonly hitReactions = new Map<string, HitReaction>();
   private readonly spriteTracks = new Map<string, SpriteTrack>();
   private readonly ultimateUntil = new Map<string, number>();
-  private explosionFlash: ExplosionFlash | null = null;
   private ultimateCutIn: UltimateCutIn | null = null;
 
   private mounted = false;
@@ -369,7 +359,6 @@ class CanvasFightRenderer implements MobaRenderer {
     // Hit-stop menghentikan animasi/partikel, tetapi tidak mengubah state jaringan.
     const dtSeconds = frozen ? 0 : dt / 1000;
     this.animMs += dtSeconds * 1000;
-    this.shake = Math.max(0, this.shake - dtSeconds * 28);
     this.updateParticles(dtSeconds);
     this.draw(drawState);
   }
@@ -414,14 +403,13 @@ class CanvasFightRenderer implements MobaRenderer {
         });
         this.freezeUntil = Math.max(this.freezeUntil, this.elapsedMs + (heavy ? 90 : 45));
         this.frozenState = state;
-        this.shake = Math.min(9, this.shake + (heavy ? 5.5 : 2.5));
         this.spawnBurst(
           hero.x,
           hero.z + 1.4,
           local ? '#ff5252' : '#ffffff',
-          heavy ? 18 : 10,
-          heavy ? 1.8 : 1.3,
-          heavy ? 7 : 5,
+          heavy ? 10 : 6,
+          heavy ? 1.2 : 0.9,
+          heavy ? 4 : 3,
         );
       }
       this.previousHp.set(hero.id, hero.hp);
@@ -473,30 +461,18 @@ class CanvasFightRenderer implements MobaRenderer {
           life: 900,
           maxLife: 900,
         };
-        this.shake = Math.min(9, this.shake + 4.2);
       }
     }
     switch (effect.kind) {
       case 'explosion':
       case 'boss_spawn':
-        this.spawnBurst(effect.x, effect.z, color, 18, radius, 9);
-        this.explosionFlash = { x: effect.x, z: effect.z, radius, life: 360, maxLife: 360 };
-        this.texts.push({
-          x: effect.x,
-          z: effect.z + 2,
-          text: 'BOOM!',
-          color,
-          life: 850,
-          maxLife: 850,
-        });
-        this.shake = Math.min(9, this.shake + 3.6);
+        // Overlay ledakan, teks BOOM!, burst besar, dan guncangan sengaja dimatikan.
         break;
       case 'hit':
-        this.spawnBurst(effect.x, effect.z, '#fffde7', 10, 1.5, 6);
-        this.shake = Math.min(9, this.shake + 1.2);
+        this.spawnBurst(effect.x, effect.z, '#fffde7', 6, 1.1, 4);
         break;
       case 'ko':
-        this.spawnBurst(effect.x, effect.z, '#33373b', 16, radius * 0.7, 5);
+        this.spawnBurst(effect.x, effect.z, '#33373b', 10, radius * 0.5, 4);
         this.texts.push({
           x: effect.x,
           z: effect.z + 2.4,
@@ -505,7 +481,6 @@ class CanvasFightRenderer implements MobaRenderer {
           life: 1000,
           maxLife: 1000,
         });
-        this.shake = Math.min(9, this.shake + 2.2);
         break;
       case 'levelup':
         this.texts.push({
@@ -588,10 +563,6 @@ class CanvasFightRenderer implements MobaRenderer {
       text.z += dtSeconds * 2.4;
       if (text.life <= 0) this.texts.splice(i, 1);
     }
-    if (this.explosionFlash) {
-      this.explosionFlash.life -= dtSeconds * 1000;
-      if (this.explosionFlash.life <= 0) this.explosionFlash = null;
-    }
     for (let i = this.skillAnims.length - 1; i >= 0; i -= 1) {
       const anim = this.skillAnims[i]!;
       anim.life -= dtSeconds * 1000;
@@ -618,12 +589,6 @@ class CanvasFightRenderer implements MobaRenderer {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.width, this.height);
 
-    // Overscan kecil supaya shake tidak membuka pinggiran kosong.
-    const shakeX = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 2 : 0;
-    const shakeY = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 2 : 0;
-    ctx.save();
-    ctx.translate(shakeX, shakeY);
-
     this.drawStage();
     this.drawPlatforms();
     this.drawSpawnMarkers();
@@ -634,11 +599,9 @@ class CanvasFightRenderer implements MobaRenderer {
     }
     this.drawSkillAnims();
     this.drawParticles();
-    this.drawExplosionFlash();
     this.drawTexts();
     this.drawUltimateCutIn();
     this.drawAim();
-    ctx.restore();
   }
 
   /** Satu gambar stage utuh; tidak ada layer yang bergerak mengikuti kamera. */
@@ -841,7 +804,7 @@ class CanvasFightRenderer implements MobaRenderer {
     }
     ctx.restore();
 
-    const spriteH = SPRITE_WORLD_SIZE * this.scale * (116 / SPRITE_CELL);
+    const spriteH = SPRITE_WORLD_SIZE * this.scale * (this.spriteAnchorY / SPRITE_CELL);
     const topY = feetY - spriteH;
     const barW = 2.6 * this.scale;
     const barY = topY - 0.75 * this.scale;
@@ -1073,20 +1036,6 @@ class CanvasFightRenderer implements MobaRenderer {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
-  }
-
-  private drawExplosionFlash(): void {
-    if (!this.explosionFlash || !imageReady(this.explosionImage)) return;
-    const ctx = this.ctx!;
-    const progress = 1 - this.explosionFlash.life / this.explosionFlash.maxLife;
-    const size = this.explosionFlash.radius * 2.6 * this.scale * (0.6 + progress * 0.7);
-    const x = this.sx(this.explosionFlash.x) - size / 2;
-    const y = this.sy(this.explosionFlash.z) - size / 2;
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, 0.9 - progress * 0.9);
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(this.explosionImage, x, y, size, size);
-    ctx.restore();
   }
 
   private drawTexts(): void {

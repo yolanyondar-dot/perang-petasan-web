@@ -42,7 +42,7 @@ Semua lapisan ini terjadi bersamaan, dalam ±0.1 detik:
 | 1 | **Hit-stop** (simulasi berhenti sejenak) | ringan 0.045 s · berat 0.09–0.11 s | Hanya simulasi yang berhenti; layar tetap digambar |
 | 2 | **Kilat** pada yang terkena | musuh: putih `brightness(2.6)` 0.1 s · pemain: merah 0.14 s | Warna berbeda → pemain langsung tahu siapa yang kena |
 | 3 | **Percikan** di titik kena | 10–18 partikel, warna sesuai sumber (emas = pedang, biru = skill cahaya, jingga = api) | Muncul di tinggi hitbox serangan, bukan di kaki |
-| 4 | **Screen shake** | trauma +0.18 ringan · +0.45 berat · +0.3 saat roboh | Menggoyang seluruh stage, bukan badan karakter |
+| 4 | **Screen shake** | **DINONAKTIFKAN** | Beta mematikan guncangan layar karena bikin pusing; efek tetap dibaca lewat kilat + hit-stop |
 | 5 | **Knockback** | kecepatan = arah pukulan × 150–320 px/s, diredam cepat (900 px/s²) | Terlempar sebentar lalu berhenti, tidak meluncur jauh |
 | 6 | **Animasi hurt** | 4 frame dalam 0.4 s | Membatalkan serangan yang sedang berjalan |
 | 7 | **Angka damage / suara** | angka melayang 0.7 s; bunyi pukul | Pukulan beruntun kecil (api) tanpa bunyi per tick |
@@ -58,7 +58,7 @@ Semua lapisan ini terjadi bersamaan, dalam ±0.1 detik:
 
 - **Setiap pukulan membatalkan serangannya** (termasuk saat ancang-ancang) → pemain yang memukul duluan menang.
 - **Tanpa health bar**: damage ditumpuk diam-diam; setelah ambang (±110, ±8 pukulan biasa) → **roboh**.
-- Roboh: terlempar 280 px/s → jatuh (goyang layar + debu saat mendarat) → berbaring 1.3 s → bangkit
+- Roboh: terlempar 280 px/s → jatuh (debu kecil saat mendarat, tanpa goyang layar) → berbaring 1.3 s → bangkit
   (down diputar terbalik, 0.4 s) → damage kembali 0 → kebal 0.5 s.
 - Selama roboh/bangkit **tidak bisa dipukul** (mencegah combo tanpa akhir).
 
@@ -71,7 +71,7 @@ Semua lapisan ini terjadi bersamaan, dalam ±0.1 detik:
 ## 3. Checklist
 
 - [ ] Petarung punya sprite hurt (4) dan down (4), skalanya sudah diukur terhadap idle
-- [ ] Pukulan memicu: hit-stop · kilat · percikan · shake · knockback · animasi hurt (semua sekaligus)
+- [ ] Pukulan memicu: hit-stop · kilat · percikan kecil · knockback · animasi hurt (tanpa shake)
 - [ ] Kilat pemain beda warna dengan kilat musuh
 - [ ] Pemain: input terkunci saat hurt, lalu kebal + berkedip
 - [ ] Musuh: pukulan membatalkan serangannya; roboh setelah ambang; kebal saat roboh/bangkit

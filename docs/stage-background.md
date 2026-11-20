@@ -67,16 +67,8 @@ animals, no text, no UI, no border.
    Set `GROUND_Y` (garis kaki petarung) di dalam pita itu, sedikit di bawah tengahnya. Untuk lantai yang
    bukan coklat (batu, kayu), ganti rumus warnanya.
 3. **Kamera diam**, arena selebar layar; petarung dibatasi di tepi kiri/kanan (mis. 40 px dari tepi).
-4. **Screen shake** menggeser seluruh stage — gambar tepi terluar gambar direntangkan ±40 px ke luar layar
-   supaya getaran tidak memperlihatkan pinggiran kosong:
-
-   ```js
-   ctx.drawImage(img, 0, 0, 1, H, -M, 0, M, H);           // kiri
-   ctx.drawImage(img, W - 1, 0, 1, H, W, 0, M, H);        // kanan
-   ctx.drawImage(img, 0, 0, W, 1, -M, -M, W + 2 * M, M);  // atas
-   ctx.drawImage(img, 0, H - 1, W, 1, -M, H, W + 2 * M, M); // bawah
-   ctx.drawImage(img, 0, 0);
-   ```
+4. **Screen shake tidak dipakai** di beta. Kamera benar-benar diam/supaya tidak bikin pusing, jadi tidak perlu
+   overscan atau rentangan tepi gambar. Reaksi hit memakai kilat, blink, hit-stop, dan animasi hurt saja.
 
 5. **Efek yang menggelapkan layar** (skill besar) → overlay gelap di atas stage, di bawah karakter dan efek.
 6. Simpan beberapa varian dan pilih lewat parameter (mis. `?stage=`) supaya mudah dibandingkan di game.
@@ -96,5 +88,5 @@ animals, no text, no UI, no border.
 - [ ] Pita lantai terlihat dari samping-atas, selebar layar; bukan penampang tanah; tidak ada platform melayang
 - [ ] Tengah layar lapang; landmark di sepertiga kiri/kanan
 - [ ] `GROUND_Y` diukur dari pita lantai; kaki petarung terlihat berdiri di atas lantai
-- [ ] Kamera diam; screen shake tidak memperlihatkan tepi kosong
+- [ ] Kamera diam; tidak ada screen shake atau tepi kosong
 - [ ] Sumber, job id, prompt, dan varian yang dipilih dicatat (mis. `background/layers.md`)
