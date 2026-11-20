@@ -145,7 +145,14 @@ export interface MobaBossView extends MobaUnitView {
   respawnIn: number;
 }
 
-export interface MobaProjectileView {
+/** Identitas visual opsional supaya renderer bisa memakai sprite per skill. */
+export interface SkillFxMeta {
+  skillKey?: string;
+  dirX?: number;
+  dirZ?: number;
+}
+
+export interface MobaProjectileView extends SkillFxMeta {
   id: string;
   team: TeamId;
   x: number;
@@ -163,7 +170,7 @@ export interface MobaProjectileView {
   ownerId: string;
 }
 
-export interface MobaEffectView {
+export interface MobaEffectView extends SkillFxMeta {
   id: string;
   kind: MobaEffectKind;
   x: number;

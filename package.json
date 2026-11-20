@@ -16,6 +16,7 @@
     "build:client": "npm run build -w @pp/client",
     "build:worker": "npm run build:shared && npm run build -w @pp/client",
     "assets:process": "node scripts/process-assets.mjs",
+    "assets:skills": "node scripts/generate-skill-atlas.mjs",
     "dev": "npm run build:shared && concurrently -k -n client,worker -c magenta,cyan \"npm run build -w @pp/client -- --watch\" \"npm run dev -w @pp/worker\"",
     "dev:server": "npm run build:shared && npm run dev -w @pp/server",
     "dev:client": "npm run build:shared && npm run dev -w @pp/client",

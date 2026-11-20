@@ -87,6 +87,7 @@ interface ProjectileRuntime {
   kind: ProjectileKind;
   knockback: number;
   skillType?: string;
+  skillKey?: string;
 }
 
 interface SpawnProjectileInput {
@@ -108,6 +109,7 @@ interface SpawnProjectileInput {
   slowMs?: number;
   knockback?: number;
   skillType?: string;
+  skillKey?: string;
 }
 
 interface DamageOptions {
@@ -795,6 +797,8 @@ export class FightRoom implements DurableObject {
     const aoeFactor = runtime.itemStats.aoeMultiplier > 0 ? runtime.itemStats.aoeMultiplier : 1;
     const radius = skill.radius * Math.max(1, aoeFactor);
     const color = runtime.definition.colorTheme;
+    const skillKey = `${hero.heroId}:${key}`;
+    const fxMeta = { skillKey, dirX, dirZ };
 
     switch (skill.type) {
       case 'cone_damage': {
@@ -804,7 +808,7 @@ export class FightRoom implements DurableObject {
           if (Math.abs(target.z - hero.z) > 5) continue;
           this.applyDamage(target, damage, hero.id, { knockback: 1.1 });
         }
-        this.addEffect('hit', hero.x + dirX * range * 0.5, hero.z + 1.5, range * 0.6, FIGHT_BALANCE.effectTtlMs, color);
+        this.addEffect('hit', hero.x + dirX * range * 0.5, hero.z + 1.5, range * 0.6, FIGHT_BALANCE.effectTtlMs, color, fxMeta);
         break;
       }
       case 'dash_buff': {
@@ -812,14 +816,14 @@ export class FightRoom implements DurableObject {
         hero.vx = dirX * FIGHT_BALANCE.dashSpeed * 1.15;
         hero.speedBoostUntil = this.elapsedMs + Math.max(500, skill.durationMs);
         runtime.speedBoostMultiplier = skill.speedBoost > 0 ? skill.speedBoost : 1.5;
-        this.addEffect('dash', hero.x, hero.z, 3, FIGHT_BALANCE.effectTtlMs, color);
+        this.addEffect('dash', hero.x, hero.z, 3, FIGHT_BALANCE.effectTtlMs, color, fxMeta);
         break;
       }
       case 'aoe_spin': {
         for (const target of this.enemiesInRadius(hero.x, hero.z + 1, Math.max(radius, 3), hero.team)) {
           this.applyDamage(target, damage, hero.id, { knockback: 1.6 });
         }
-        this.addEffect('explosion', hero.x, hero.z + 1, Math.max(radius, 3), FIGHT_BALANCE.effectTtlMs, color);
+        this.addEffect('explosion', hero.x, hero.z + 1, Math.max(radius, 3), FIGHT_BALANCE.effectTtlMs, color, fxMeta);
         break;
       }
       case 'aoe_stun': {
@@ -827,7 +831,7 @@ export class FightRoom implements DurableObject {
         for (const target of this.enemiesInRadius(center.x, center.z, Math.max(radius, 2), hero.team)) {
           this.applyDamage(target, damage, hero.id, { stunMs: skill.stunMs, knockback: 1.2 });
         }
-        this.addEffect('explosion', center.x, center.z, Math.max(radius, 2), FIGHT_BALANCE.effectTtlMs, color);
+        this.addEffect('explosion', center.x, center.z, Math.max(radius, 2), FIGHT_BALANCE.effectTtlMs, color, fxMeta);
         break;
       }
       case 'aoe_slow': {
@@ -839,7 +843,7 @@ export class FightRoom implements DurableObject {
             knockback: 0.6,
           });
         }
-        this.addEffect('explosion', center.x, center.z, Math.max(radius, 2), FIGHT_BALANCE.effectTtlMs, color);
+        this.addEffect('explosion', center.x, center.z, Math.max(radius, 2), FIGHT_BALANCE.effectTtlMs, color, fxMeta);
         break;
       }
       case 'shockwave_knockback': {
@@ -849,7 +853,7 @@ export class FightRoom implements DurableObject {
             knockback: skill.knockback > 0 ? skill.knockback : 2.5,
           });
         }
-        this.addEffect('explosion', center.x, center.z, radius, FIGHT_BALANCE.effectTtlMs, color);
+        this.addEffect('explosion', center.x, center.z, radius, FIGHT_BALANCE.effectTtlMs, color, fxMeta);
         break;
       }
       case 'line_skillshot':
@@ -868,6 +872,7 @@ export class FightRoom implements DurableObject {
           color,
           kind: 'skill',
           skillType: skill.type,
+          skillKey,
           ttlMs: Math.max(320, (reach / FIGHT_BALANCE.projectileSpeed) * 1000),
           offset: 1.2,
           stunMs: skill.stunMs,
@@ -882,7 +887,7 @@ export class FightRoom implements DurableObject {
         for (const target of this.enemiesInRadius(center.x, center.z, Math.max(radius, 2), hero.team)) {
           this.applyDamage(target, damage, hero.id);
         }
-        this.addEffect('explosion', center.x, center.z, Math.max(radius, 2), FIGHT_BALANCE.effectTtlMs, color);
+        this.addEffect('explosion', center.x, center.z, Math.max(radius, 2), FIGHT_BALANCE.effectTtlMs, color, fxMeta);
         break;
       }
     }
@@ -974,11 +979,15 @@ export class FightRoom implements DurableObject {
     projectile.slowPercent = input.slowPercent ?? 0;
     projectile.slowMs = input.slowMs ?? 0;
     projectile.ownerId = input.ownerId;
+    projectile.skillKey = input.skillKey;
+    projectile.dirX = dirX;
+    projectile.dirZ = dirZ;
     this.state.projectiles.set(projectile.id, projectile);
     this.projectileRuntime.set(projectile.id, {
       kind: input.kind,
       knockback: input.knockback ?? 1,
       skillType: input.skillType,
+      skillKey: input.skillKey,
     });
   }
 
@@ -1028,6 +1037,11 @@ export class FightRoom implements DurableObject {
       radius,
       FIGHT_BALANCE.effectTtlMs,
       projectile.color,
+      {
+        skillKey: runtime.skillKey ?? projectile.skillKey,
+        dirX,
+        dirZ: sign(projectile.vz || 0),
+      },
     );
   }
 
@@ -1160,6 +1174,7 @@ export class FightRoom implements DurableObject {
     radius: number,
     ttlMs: number,
     color: string,
+    meta?: { skillKey?: string; dirX?: number; dirZ?: number },
   ): void {
     const effect = createEffectState();
     effect.id = `fx-${++this.entitySequence}`;
@@ -1169,6 +1184,9 @@ export class FightRoom implements DurableObject {
     effect.radius = radius;
     effect.ttlMs = ttlMs;
     effect.color = color;
+    effect.skillKey = meta?.skillKey;
+    effect.dirX = meta?.dirX;
+    effect.dirZ = meta?.dirZ;
     this.state.effects.set(effect.id, effect);
     if (this.state.effects.size > 80) {
       const oldest = this.state.effects.values().next().value;

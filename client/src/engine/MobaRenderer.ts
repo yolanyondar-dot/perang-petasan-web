@@ -54,6 +54,49 @@ interface ExplosionFlash {
   radius: number;
 }
 
+interface SkillFrame {
+  index: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface SkillAnimationRow {
+  label: string;
+  fps: number;
+  loop: boolean;
+  durationMs: number;
+  frames: SkillFrame[];
+}
+
+interface SkillAtlasManifest {
+  image: string;
+  sheetWidth: number;
+  sheetHeight: number;
+  frameWidth: number;
+  frameHeight: number;
+  frame_layout: { rows: Record<string, SkillAnimationRow> };
+}
+
+interface SkillAnimInstance {
+  key: string;
+  row: SkillAnimationRow;
+  x: number;
+  z: number;
+  radius: number;
+  dirX: number;
+  life: number;
+  maxLife: number;
+}
+
+interface UltimateCutIn {
+  label: string;
+  color: string;
+  life: number;
+  maxLife: number;
+}
+
 const TAU = Math.PI * 2;
 const VIEW_HEIGHT = 33;
 
@@ -126,11 +169,16 @@ class CanvasFightRenderer implements MobaRenderer {
   private readonly portraits = new Map<string, HTMLImageElement>();
   private readonly mapImage = loadImage('/assets/maps/design_map.png');
   private readonly explosionImage = loadImage('/assets/effects/efek_ledakan.png');
+  private readonly skillAtlasImage = new Image();
+  private readonly skillAnimations = new Map<string, SkillAnimationRow>();
+  private skillAtlasReady = false;
 
   private readonly seenEffects = new Set<string>();
   private readonly particles: Particle[] = [];
   private readonly texts: FloatingText[] = [];
+  private readonly skillAnims: SkillAnimInstance[] = [];
   private explosionFlash: ExplosionFlash | null = null;
+  private ultimateCutIn: UltimateCutIn | null = null;
 
   private mounted = false;
   private disposed = false;
@@ -151,6 +199,22 @@ class CanvasFightRenderer implements MobaRenderer {
     window.addEventListener('resize', this.handleResize);
     this.mounted = true;
     this.resize();
+    void this.loadSkillAtlas();
+  }
+
+  private async loadSkillAtlas(): Promise<void> {
+    try {
+      const response = await fetch('/assets/effects/skills/manifest.json');
+      if (!response.ok) return;
+      const manifest = (await response.json()) as SkillAtlasManifest;
+      this.skillAtlasImage.src = `/assets/effects/skills/${manifest.image}`;
+      for (const [key, row] of Object.entries(manifest.frame_layout.rows)) {
+        if (row.frames?.length) this.skillAnimations.set(key, row);
+      }
+      this.skillAtlasReady = true;
+    } catch {
+      // Atlas opsional: efek partikel Canvas2D tetap dipakai jika gagal dimuat.
+    }
   }
 
   resize(): void {
@@ -220,8 +284,11 @@ class CanvasFightRenderer implements MobaRenderer {
     window.removeEventListener('resize', this.handleResize);
     this.particles.length = 0;
     this.texts.length = 0;
+    this.skillAnims.length = 0;
+    this.skillAnimations.clear();
     this.portraits.clear();
     this.seenEffects.clear();
+    this.ultimateCutIn = null;
     this.canvas?.parentElement?.removeChild(this.canvas);
     this.canvas = null;
     this.ctx = null;
@@ -248,6 +315,33 @@ class CanvasFightRenderer implements MobaRenderer {
   private spawnEffect(effect: MobaEffectView): void {
     const radius = Math.max(1, effect.radius);
     const color = effect.color || '#ffb74d';
+    const skillKey = effect.skillKey;
+    if (skillKey) {
+      const row = this.skillAnimations.get(skillKey);
+      if (row) {
+        this.skillAnims.push({
+          key: skillKey,
+          row,
+          x: effect.x,
+          z: effect.z,
+          radius,
+          dirX: effect.dirX ?? 1,
+          life: row.durationMs,
+          maxLife: row.durationMs,
+        });
+        if (this.skillAnims.length > 16) this.skillAnims.shift();
+        if (skillKey.endsWith(':ultimate')) {
+          const heroId = skillKey.split(':')[0] ?? '';
+          this.ultimateCutIn = {
+            label: HEROES[heroId]?.name ?? heroId,
+            color,
+            life: 900,
+            maxLife: 900,
+          };
+          this.shake = Math.min(1.6, this.shake + 0.8);
+        }
+      }
+    }
     switch (effect.kind) {
       case 'explosion':
       case 'boss_spawn':
@@ -366,6 +460,15 @@ class CanvasFightRenderer implements MobaRenderer {
       this.explosionFlash.life -= dtSeconds * 1000;
       if (this.explosionFlash.life <= 0) this.explosionFlash = null;
     }
+    for (let i = this.skillAnims.length - 1; i >= 0; i -= 1) {
+      const anim = this.skillAnims[i]!;
+      anim.life -= dtSeconds * 1000;
+      if (anim.life <= 0) this.skillAnims.splice(i, 1);
+    }
+    if (this.ultimateCutIn) {
+      this.ultimateCutIn.life -= dtSeconds * 1000;
+      if (this.ultimateCutIn.life <= 0) this.ultimateCutIn = null;
+    }
   }
 
   private clampCamera(): void {
@@ -406,9 +509,11 @@ class CanvasFightRenderer implements MobaRenderer {
       this.drawProjectiles(state);
       this.drawHeroes(state);
     }
+    this.drawSkillAnims();
     this.drawParticles();
     this.drawExplosionFlash();
     this.drawTexts();
+    this.drawUltimateCutIn();
     this.drawAim();
     ctx.restore();
   }
@@ -446,18 +551,22 @@ class CanvasFightRenderer implements MobaRenderer {
     const ctx = this.ctx!;
     if (imageReady(this.mapImage)) {
       ctx.save();
-      ctx.globalAlpha = 0.14;
+      ctx.globalAlpha = 0.1;
       const y = this.sy(FIGHT_WORLD_HEIGHT);
       const h = this.sy(0) - y;
+      const drift = -this.camX * this.scale * 0.08;
       ctx.drawImage(
         this.mapImage,
-        this.sx(-FIGHT_HALF_WIDTH),
+        this.sx(-FIGHT_HALF_WIDTH) + drift,
         y,
         FIGHT_HALF_WIDTH * 2 * this.scale,
         h,
       );
       ctx.restore();
     }
+
+    this.drawFarKampung();
+    this.drawFestivalLayer();
 
     for (const team of ['team_merah', 'team_putih'] as const) {
       const spawn = FIGHT_SPAWNS[team];
@@ -471,40 +580,193 @@ class CanvasFightRenderer implements MobaRenderer {
     }
   }
 
+  /** Siluet rumah kampung di kejauhan (parallax lambat). */
+  private drawFarKampung(): void {
+    const ctx = this.ctx!;
+    const baseY = this.sy(6.2);
+    const tile = 13 * this.scale;
+    const offset = (((-this.camX * this.scale * 0.12) % tile) + tile) % tile;
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    for (let i = -2; i <= Math.ceil(this.width / tile) + 2; i += 1) {
+      const x = i * tile + offset;
+      const w = tile * 0.62;
+      const h = (2.1 + (Math.abs(i) % 3) * 0.45) * this.scale;
+      ctx.fillStyle = '#2e5d49';
+      ctx.fillRect(x, baseY - h, w, h);
+      ctx.beginPath();
+      ctx.moveTo(x - 0.1 * this.scale, baseY - h);
+      ctx.lineTo(x + w / 2, baseY - h - 1.2 * this.scale);
+      ctx.lineTo(x + w + 0.1 * this.scale, baseY - h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,224,130,0.42)';
+      ctx.fillRect(x + w * 0.24, baseY - h * 0.62, w * 0.18, h * 0.22);
+      ctx.fillRect(x + w * 0.58, baseY - h * 0.62, w * 0.18, h * 0.22);
+    }
+    ctx.restore();
+  }
+
+  /** Gapura, kios, dan lampu festival di lapisan tengah (parallax sedang). */
+  private drawFestivalLayer(): void {
+    const ctx = this.ctx!;
+    const drift = -this.camX * this.scale * 0.32;
+    const baseY = this.sy(3.2);
+    const gateX = this.width / 2 + drift;
+    const gateW = 9 * this.scale;
+    const gateH = 6.4 * this.scale;
+
+    ctx.save();
+    ctx.globalAlpha = 0.78;
+    ctx.fillStyle = '#8d5524';
+    ctx.fillRect(gateX - gateW / 2, baseY - gateH, 1.1 * this.scale, gateH);
+    ctx.fillRect(gateX + gateW / 2 - 1.1 * this.scale, baseY - gateH, 1.1 * this.scale, gateH);
+    ctx.fillStyle = '#b71c1c';
+    ctx.fillRect(gateX - gateW / 2 - 0.35 * this.scale, baseY - gateH, gateW + 0.7 * this.scale, 1 * this.scale);
+    ctx.fillStyle = '#6d4c41';
+    ctx.beginPath();
+    ctx.moveTo(gateX - gateW / 2 - 0.8 * this.scale, baseY - gateH);
+    ctx.lineTo(gateX, baseY - gateH - 1.6 * this.scale);
+    ctx.lineTo(gateX + gateW / 2 + 0.8 * this.scale, baseY - gateH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fff8e1';
+    roundedRect(ctx, gateX - 2.6 * this.scale, baseY - gateH + 1.25 * this.scale, 5.2 * this.scale, 1.15 * this.scale, 4);
+    ctx.fill();
+    ctx.fillStyle = '#b71c1c';
+    ctx.font = `800 ${Math.max(9, 0.46 * this.scale)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('GAPURA KAMPUNG', gateX, baseY - gateH + 2.05 * this.scale);
+    ctx.restore();
+
+    const tile = 20 * this.scale;
+    const offset = (((drift * 1.15) % tile) + tile) % tile;
+    for (let i = -2; i <= Math.ceil(this.width / tile) + 2; i += 1) {
+      this.drawKios(i * tile + offset, baseY + 0.6 * this.scale);
+    }
+    this.drawFestivalLights();
+  }
+
+  private drawKios(x: number, baseY: number): void {
+    const ctx = this.ctx!;
+    const w = 5.2 * this.scale;
+    const h = 2.6 * this.scale;
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(x - w / 2, baseY - h, 0.32 * this.scale, h);
+    ctx.fillRect(x + w / 2 - 0.32 * this.scale, baseY - h, 0.32 * this.scale, h);
+    const stripes = 6;
+    for (let s = 0; s < stripes; s += 1) {
+      ctx.fillStyle = s % 2 === 0 ? '#e53935' : '#fff8e1';
+      ctx.fillRect(x - w / 2 + (s * w) / stripes, baseY - h - 0.7 * this.scale, w / stripes, 0.7 * this.scale);
+    }
+    ctx.fillStyle = '#8d6e63';
+    ctx.fillRect(x - w / 2, baseY - 1 * this.scale, w, 0.42 * this.scale);
+    ctx.restore();
+  }
+
+  private drawFestivalLights(): void {
+    const ctx = this.ctx!;
+    const y = this.height * 0.1;
+    const shift = ((-this.camX * 0.55 * this.scale) % (8 * this.scale) + 8 * this.scale) % (8 * this.scale);
+    const colors = ['#ffd54f', '#ef5350', '#4fc3f7', '#81c784'];
+    ctx.save();
+    ctx.strokeStyle = 'rgba(60,50,40,0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-shift, y);
+    ctx.quadraticCurveTo(this.width / 2, y + 46, this.width + shift, y);
+    ctx.stroke();
+    for (let i = 0; i <= 18; i += 1) {
+      const t = i / 18;
+      const x = -shift + t * (this.width + shift * 2);
+      const bulbY = y + Math.sin(t * Math.PI) * 42;
+      const color = colors[i % colors.length]!;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(x, bulbY, 3.2, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   private drawStage(): void {
     const ctx = this.ctx!;
     const groundY = this.sy(FIGHT_GROUND_Z);
+    const left = this.sx(-FIGHT_HALF_WIDTH);
+    const worldW = FIGHT_HALF_WIDTH * 2 * this.scale;
 
-    ctx.fillStyle = '#795548';
-    ctx.fillRect(this.sx(-FIGHT_HALF_WIDTH), groundY, FIGHT_HALF_WIDTH * 2 * this.scale, 9 * this.scale);
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(left, groundY, worldW, 10 * this.scale);
+    ctx.fillStyle = '#8d6e63';
+    ctx.fillRect(left, groundY + 0.55 * this.scale, worldW, 9 * this.scale);
+    ctx.strokeStyle = 'rgba(62,39,35,0.28)';
+    ctx.lineWidth = 1;
+    for (let x = left; x <= left + worldW; x += 1.6 * this.scale) {
+      ctx.beginPath();
+      ctx.moveTo(x, groundY + 0.55 * this.scale);
+      ctx.lineTo(x, groundY + 9.5 * this.scale);
+      ctx.stroke();
+    }
     ctx.fillStyle = '#66bb6a';
-    ctx.fillRect(this.sx(-FIGHT_HALF_WIDTH), groundY - 0.35 * this.scale, FIGHT_HALF_WIDTH * 2 * this.scale, 0.7 * this.scale);
+    ctx.fillRect(left, groundY - 0.35 * this.scale, worldW, 0.7 * this.scale);
+    const stripe = 0.8 * this.scale;
+    for (let x = left, i = 0; x < left + worldW; x += stripe, i += 1) {
+      ctx.fillStyle = i % 2 === 0 ? '#e53935' : '#fff8e1';
+      ctx.fillRect(x, groundY + 0.15 * this.scale, stripe, 0.4 * this.scale);
+    }
 
     for (const platform of FIGHT_PLATFORMS) {
       const x = this.sx(platform.x - platform.w / 2);
       const y = this.sy(platform.z);
       const w = platform.w * this.scale;
       const h = 0.9 * this.scale;
+      ctx.fillStyle = 'rgba(62,39,35,0.5)';
+      ctx.fillRect(x + w * 0.12, y + h, 0.3 * this.scale, 1.2 * this.scale);
+      ctx.fillRect(x + w * 0.82, y + h, 0.3 * this.scale, 1.2 * this.scale);
       ctx.fillStyle = '#8d5524';
       roundedRect(ctx, x, y, w, h, 5);
       ctx.fill();
-      ctx.fillStyle = '#a5d66a';
-      roundedRect(ctx, x, y - 0.25 * this.scale, w, 0.4 * this.scale, 4);
+      ctx.strokeStyle = '#5d4037';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      const stripes = 8;
+      for (let s = 0; s < stripes; s += 1) {
+        ctx.fillStyle = s % 2 === 0 ? '#e53935' : '#fff8e1';
+        ctx.fillRect(x + (s * w) / stripes, y - 0.25 * this.scale, w / stripes, 0.45 * this.scale);
+      }
+      ctx.fillStyle = 'rgba(18,22,30,0.72)';
+      const labelW = Math.max(44, platform.label.length * 0.42 * this.scale + 14);
+      roundedRect(ctx, x + w / 2 - labelW / 2, y + h + 5, labelW, 17, 4);
       ctx.fill();
-      ctx.fillStyle = 'rgba(60,40,20,0.65)';
-      ctx.font = `600 ${Math.max(9, 0.5 * this.scale)}px sans-serif`;
+      ctx.fillStyle = '#fff8e1';
+      ctx.font = `600 ${Math.max(9, 0.45 * this.scale)}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(platform.label, x + w / 2, y + h + 12);
+      ctx.fillText(platform.label, x + w / 2, y + h + 17);
     }
 
-    const centerX = this.sx(0);
+    const ringX = this.sx(0);
+    const ringY = this.sy(FIGHT_GROUND_Z + 4.6);
     ctx.save();
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = 0.45;
     ctx.strokeStyle = '#ffd54f';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(centerX, this.sy(FIGHT_GROUND_Z + 5), 4.5 * this.scale, Math.PI, TAU);
+    ctx.arc(ringX, ringY, 5.2 * this.scale, Math.PI, TAU);
     ctx.stroke();
+    ctx.globalAlpha = 0.25;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(ringX, ringY, 4 * this.scale, Math.PI, TAU);
+    ctx.stroke();
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = '#fff8e1';
+    ctx.font = `800 ${Math.max(9, 0.45 * this.scale)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('RING KAMPUNG', ringX, ringY + 0.9 * this.scale);
     ctx.restore();
   }
 
@@ -658,6 +920,75 @@ class CanvasFightRenderer implements MobaRenderer {
       this.portraits.set(heroId, image);
     }
     return image;
+  }
+
+  private drawSkillAnims(): void {
+    if (!this.skillAtlasReady || !imageReady(this.skillAtlasImage)) return;
+    const ctx = this.ctx!;
+    ctx.save();
+    for (const anim of this.skillAnims) {
+      const elapsed = anim.maxLife - anim.life;
+      const frameCount = anim.row.frames.length;
+      const frameDuration = anim.maxLife / frameCount;
+      const index = anim.row.loop
+        ? Math.floor(elapsed / frameDuration) % frameCount
+        : Math.min(frameCount - 1, Math.floor(elapsed / frameDuration));
+      const frame = anim.row.frames[index];
+      if (!frame) continue;
+
+      const size = clamp(anim.radius * 3.6, 3.5, 20) * this.scale;
+      const x = this.sx(anim.x) - size / 2;
+      const y = this.sy(anim.z) - size / 2;
+      ctx.globalAlpha = clamp(anim.life / (anim.maxLife * 0.35), 0, 1);
+      ctx.save();
+      if (anim.dirX < 0) {
+        ctx.translate(x + size, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(this.skillAtlasImage, frame.x, frame.y, frame.w, frame.h, 0, 0, size, size);
+      } else {
+        ctx.drawImage(this.skillAtlasImage, frame.x, frame.y, frame.w, frame.h, x, y, size, size);
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  private drawUltimateCutIn(): void {
+    if (!this.ultimateCutIn) return;
+    const ctx = this.ctx!;
+    const { label, color, life, maxLife } = this.ultimateCutIn;
+    const progress = clamp(life / maxLife, 0, 1);
+    const appear = clamp((1 - progress) * 8, 0, 1);
+    const alpha = Math.min(1, appear, progress * 3);
+    const slide = -(1 - appear) * this.width * 0.6;
+    const bandWidth = Math.min(this.width * 0.82, 760);
+    const bandHeight = Math.max(62, this.height * 0.12);
+    const centerY = this.height * 0.3;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(slide, centerY);
+    ctx.rotate(-0.07);
+    ctx.fillStyle = 'rgba(12,16,24,0.88)';
+    ctx.beginPath();
+    ctx.moveTo(-bandWidth / 2 + 26, -bandHeight / 2);
+    ctx.lineTo(bandWidth / 2, -bandHeight / 2);
+    ctx.lineTo(bandWidth / 2 - 26, bandHeight / 2);
+    ctx.lineTo(-bandWidth / 2, bandHeight / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffeb3b';
+    ctx.font = `900 ${Math.max(18, bandHeight * 0.38)}px sans-serif`;
+    ctx.fillText('ULTIMATE!', 0, -4);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `800 ${Math.max(13, bandHeight * 0.24)}px sans-serif`;
+    ctx.fillText(label, 0, bandHeight * 0.32);
+    ctx.restore();
   }
 
   private drawParticles(): void {
