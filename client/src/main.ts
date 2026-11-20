@@ -1,7 +1,6 @@
 import './style.css';
 import { createMobaRenderer } from './engine/MobaRenderer.js';
 import type { ClientMobaState, MobaKoMessage, MobaMatchEndMessage, RoomMode } from '@pp/shared';
-import { audio } from './core/audio.js';
 import { network } from './core/network.js';
 import { addThrKoin, loadProfile, type PlayerProfile } from './core/storage.js';
 import { Hud } from './ui/Hud.js';
@@ -82,32 +81,8 @@ const hud = new Hud(app, {
   onLeave: () => void backToLobby(),
 });
 
-/** Permukaan peta menangkap klik bidik; elemen HUD berada di atasnya. */
-const aim = { x: 0, z: 0 };
-let hasAim = false;
 let inMatch = false;
 let activeProfile: PlayerProfile = loadProfile();
-
-function updateAim(clientX: number, clientY: number): void {
-  const ground = renderer.screenToGround(clientX, clientY);
-  if (!ground) return;
-  aim.x = ground.x;
-  aim.z = ground.z;
-  hasAim = true;
-  renderer.setAimIndicator(aim.x, aim.z, true);
-  hud.setAim(aim.x, aim.z);
-}
-
-renderSurface.addEventListener('pointermove', (event) => {
-  if (!inMatch) return;
-  // Mouse hover saja; untuk sentuhan cukup pointerdown agar tidak mengganggu joystick.
-  if (event.pointerType === 'mouse' || event.buttons !== 0) updateAim(event.clientX, event.clientY);
-});
-renderSurface.addEventListener('pointerdown', (event) => {
-  if (!inMatch) return;
-  audio.unlock();
-  updateAim(event.clientX, event.clientY);
-});
 
 /* ---------------------------------------------------------------- keyboard */
 
@@ -153,15 +128,12 @@ function movementVector(state: ClientMobaState | null): {
   prevJumpHeld = jumpHeld;
   prevDashHeld = dashHeld;
 
-  let aimX = aim.x;
-  let aimZ = aim.z;
-  if (!hasAim) {
-    const hero = state
-      ? Object.values(state.heroes).find((unit) => unit.id === network.sessionId)
-      : null;
-    aimX = hero ? hero.x + hero.facing * 9 : dx * 9;
-    aimZ = hero ? hero.z + 1.5 : 1.5;
-  }
+  // Tanpa bidik manual: serangan selalu mengikuti arah hadap hero.
+  const hero = state
+    ? Object.values(state.heroes).find((unit) => unit.id === network.sessionId)
+    : null;
+  const aimX = hero ? hero.x + hero.facing * 9 : dx * 9;
+  const aimZ = hero ? hero.z + 1.5 : 1.5;
 
   return { dx, dz: jumpHeld ? 1 : 0, jump, dash, aimX, aimZ };
 }
@@ -178,10 +150,8 @@ async function joinMatch(mode: RoomMode, profile: PlayerProfile): Promise<void> 
       thrLevel: profile.heroLevels[profile.heroId] ?? 0,
     }, profile.name);
     inMatch = true;
-    hasAim = false;
     prevJumpHeld = false;
     prevDashHeld = false;
-    renderer.setAimIndicator(0, 0, false);
     lobby.hide();
     hud.show();
   } catch (error) {
@@ -191,8 +161,6 @@ async function joinMatch(mode: RoomMode, profile: PlayerProfile): Promise<void> 
 
 async function backToLobby(): Promise<void> {
   inMatch = false;
-  hasAim = false;
-  renderer.setAimIndicator(0, 0, false);
   hud.hide();
   pressed.clear();
   prevJumpHeld = false;

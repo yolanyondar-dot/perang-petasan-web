@@ -875,19 +875,6 @@ button {
   gap: 8px;
 }
 
-.aim-hint {
-  padding: 5px 10px;
-  border-radius: 8px;
-  font-size: 10px;
-  background: rgba(6, 20, 12, 0.75);
-  color: #c9dbc9;
-}
-
-.aim-hint.locked {
-  color: var(--emas);
-  border: 1px solid rgba(255, 201, 74, 0.45);
-}
-
 .skill-wheel {
   display: grid;
   grid-template-columns: repeat(2, 76px);

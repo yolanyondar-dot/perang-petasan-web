@@ -191,10 +191,6 @@ class CanvasFightRenderer implements MobaRenderer {
   private frozenState: ClientMobaState | null = null;
   private freezeUntil = 0;
 
-  private aimX = 0;
-  private aimZ = 0;
-  private aimVisible = false;
-
   private readonly stageImage = loadImage('/assets/maps/stage-kampung.png');
   private readonly skillAtlasImage = new Image();
   private readonly skillAnimations = new Map<string, AtlasAnimRow>();
@@ -320,10 +316,9 @@ class CanvasFightRenderer implements MobaRenderer {
     };
   }
 
-  setAimIndicator(x: number, z: number, visible: boolean): void {
-    this.aimX = x;
-    this.aimZ = z;
-    this.aimVisible = visible;
+  /** API dipertahankan, tetapi bidang bidik sengaja tidak digambar lagi. */
+  setAimIndicator(_x: number, _z: number, _visible: boolean): void {
+    // Tidak ada indikator bidik: serangan mengikuti arah hadap hero.
   }
 
   update(state: ClientMobaState | null, localHeroId: string, dtMs: number): void {
@@ -601,7 +596,6 @@ class CanvasFightRenderer implements MobaRenderer {
     this.drawParticles();
     this.drawTexts();
     this.drawUltimateCutIn();
-    this.drawAim();
   }
 
   /** Satu gambar stage utuh; tidak ada layer yang bergerak mengikuti kamera. */
@@ -1052,30 +1046,6 @@ class CanvasFightRenderer implements MobaRenderer {
       ctx.fillText(text.text, this.sx(text.x), this.sy(text.z));
     }
     ctx.globalAlpha = 1;
-  }
-
-  private drawAim(): void {
-    if (!this.aimVisible) return;
-    const ctx = this.ctx!;
-    const x = this.sx(this.aimX);
-    const y = this.sy(this.aimZ);
-    ctx.save();
-    ctx.strokeStyle = '#fff176';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, y, 9, 0, TAU);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x - 14, y);
-    ctx.lineTo(x - 4, y);
-    ctx.moveTo(x + 4, y);
-    ctx.lineTo(x + 14, y);
-    ctx.moveTo(x, y - 14);
-    ctx.lineTo(x, y - 4);
-    ctx.moveTo(x, y + 4);
-    ctx.lineTo(x, y + 14);
-    ctx.stroke();
-    ctx.restore();
   }
 }
 

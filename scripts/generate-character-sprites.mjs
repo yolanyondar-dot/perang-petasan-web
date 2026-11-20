@@ -49,13 +49,14 @@ const STATES = [
 /** Susunan state memakai 5 pose asli; urutan ini memberi gerakan tanpa menggambar ulang. */
 const POSE_ROWS = {
   idle: { frames: [0], fps: 5, loop: true },
-  walk: { frames: [0, 1, 2, 3, 4], fps: 8, loop: true },
-  run: { frames: [1, 2, 3, 4], fps: 12, loop: true },
-  jump: { frames: [2, 3, 4], fps: 8, loop: false },
-  attack: { frames: [3, 4, 1], fps: 12, loop: false },
-  cast: { frames: [4], fps: 8, loop: false },
+  walk: { frames: [0, 1, 2, 3], fps: 8, loop: true },
+  run: { frames: [1, 2, 3], fps: 12, loop: true },
+  jump: { frames: [2, 3], fps: 8, loop: false },
+  attack: { frames: [3, 2, 1], fps: 12, loop: false },
+  cast: { frames: [2], fps: 8, loop: false },
   hurt: { frames: [1, 0], fps: 12, loop: false },
-  down: { frames: [4, 3], fps: 8, loop: false },
+  down: { frames: [3], fps: 8, loop: false },
+  // Pose terakhir (index 4) adalah jurus ultimate, bukan frame jalan.
   ultimate: { frames: [4], fps: 6, loop: false },
 };
 
@@ -220,6 +221,16 @@ function findSplitX(labels, w, region) {
   return bestX;
 }
 
+/**
+ * Dua sheet punya coretan tipis berwarna di atas pose kelima yang masih
+ * menyatu dengan komponen utama. Pose lain tidak dipangkas supaya kepala asli
+ * tidak ikut terpotong.
+ */
+const ARTIFACT_TOP = {
+  'bocil-sarung-move.jpg': { 4: 108 },
+  'abang-ronda-move.jpg': { 4: 154 },
+};
+
 async function frameCell(pngBuffer, cropW, cropH) {
   const scale = Math.min((CELL - 8) / cropW, (CELL - 12) / cropH);
   const targetW = Math.max(1, Math.round(cropW * scale));
@@ -283,16 +294,18 @@ async function extractMoveFrames(fileName) {
   regions.sort((a, b) => a.cx - b.cx);
 
   const frames = [];
-  for (const region of regions) {
+  for (const [poseIndex, region] of regions.entries()) {
     const measured = measureRegion(labels, w, region);
+    const artifactTop = ARTIFACT_TOP[fileName]?.[poseIndex];
+    const contentTop = artifactTop === undefined ? measured.minY : Math.max(measured.minY, artifactTop);
     const cropW = measured.maxX - measured.minX + 1;
-    const cropH = measured.maxY - measured.minY + 1;
+    const cropH = measured.maxY - contentTop + 1;
     const raw = Buffer.alloc(cropW * cropH * 4);
-    for (let y = measured.minY; y <= measured.maxY; y += 1) {
+    for (let y = contentTop; y <= measured.maxY; y += 1) {
       for (let x = measured.minX; x <= measured.maxX; x += 1) {
         if (labels[y * w + x] !== region.id) continue;
         const src = (y * w + x) * ch;
-        const dst = ((y - measured.minY) * cropW + (x - measured.minX)) * 4;
+        const dst = ((y - contentTop) * cropW + (x - measured.minX)) * 4;
         raw[dst] = data[src] ?? 0;
         raw[dst + 1] = data[src + 1] ?? 0;
         raw[dst + 2] = data[src + 2] ?? 0;

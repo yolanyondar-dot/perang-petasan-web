@@ -46,12 +46,9 @@ export class Hud {
   private readonly endDetail: HTMLElement;
   private readonly cooldownOverlays = new Map<MobaSkillKey, HTMLElement>();
   private readonly skillButtons = new Map<MobaSkillKey, HTMLButtonElement>();
-  private readonly aim = { x: 0, z: 0 };
-  private hasAim = false;
   private lastHeroId = '';
   private shopSignature = '';
   private lastMinimapDraw = 0;
-  private aimHint: HTMLElement;
   private currentHero: MobaHeroView | null = null;
 
   constructor(parent: HTMLElement, private readonly callbacks: HudCallbacks) {
@@ -93,7 +90,6 @@ export class Hud {
       </div>
 
       <div class="hud-bottom-right">
-        <div class="aim-hint" id="hud-aim-hint">Klik stage untuk bidik</div>
         <div class="skill-wheel" id="hud-skills"></div>
       </div>
 
@@ -131,7 +127,6 @@ export class Hud {
     this.endPanel = q<HTMLElement>('#hud-end');
     this.endTitle = q<HTMLElement>('#hud-end-title');
     this.endDetail = q<HTMLElement>('#hud-end-detail');
-    this.aimHint = q<HTMLElement>('#hud-aim-hint');
 
     this.joystick = new VirtualJoystick(q<HTMLElement>('.joystick-wrap'));
 
@@ -181,21 +176,11 @@ export class Hud {
     this.joystick.reset();
   }
 
-  setAim(x: number, z: number): void {
-    this.aim.x = x;
-    this.aim.z = z;
-    this.hasAim = true;
-    this.aimHint.textContent = '🎯 Bidik terkunci';
-    this.aimHint.classList.add('locked');
-  }
-
   private fireSkill(key: MobaSkillKey): void {
-    let { x, z } = this.aim;
-    if (!this.hasAim) {
-      const hero = this.currentHero;
-      x = hero ? hero.x + hero.facing * 8 : 0;
-      z = hero ? hero.z + 1.5 : 1.5;
-    }
+    // Tanpa bidik manual: skill mengikuti arah hadap hero.
+    const hero = this.currentHero;
+    const x = hero ? hero.x + hero.facing * 8 : 0;
+    const z = hero ? hero.z + 1.5 : 1.5;
     audio.unlock();
     audio.play(key === 'basic' ? 'fuse' : 'explosion');
     this.callbacks.onSkill(key, x, z);
