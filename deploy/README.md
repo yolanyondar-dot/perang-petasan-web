@@ -1,128 +1,125 @@
 # Deploy Produksi — Perang Petasan: Fighting PvP 2D Side-View
 
-## Topologi (dipakai Render)
+## Topologi (dipakai Cloudflare Workers)
 
-Satu **Render Web Service** menjalankan **client statis (Vite build)** dan
-**Colyseus** pada origin yang sama:
+Satu **Cloudflare Worker** menyajikan build Vite (statik) **dan** endpoint
+matchmaking/WebSocket pada origin yang sama:
 
 ```
-Browser --HTTPS--> Render :$PORT --/ws/*--> Colyseus (matchmake + WebSocket)
-                             |
-                             +--> /client/dist (SPA + aset PNG)
+Browser --HTTPS--> Cloudflare Edge --/ws--> FightRoom Durable Object (20Hz)
+                          |                Matchmaker Durable Object
+                          +--> /assets (client/dist, SPA + PNG)
 ```
 
-- Room: `moba`, mode `3v3` / `5v5` / `10v10` (difilter via `filterBy(['mode'])`).
-- Client memakai `wss://<host>/ws` secara default. Tidak perlu `VITE_SERVER_URL`.
-- `GET /health` mengembalikan `{"ok":true,"game":"perang-petasan"}`.
-- Render men-set env `PORT`; server memakainya dan bind ke `0.0.0.0`.
-- Free plan:**service tidur setelah ~15 menit tanpa trafik**, jadi join pertama
-  bisa menunggu ±1 menit saat service bangun.
-
-Alamat produksi: `https://petasan.yondarprojects.my.id`.
+- Akun: `Yolan.yondar@gmail.com` (`d19c7b1d5b7972c31ce85743ea2a23fd`).
+- Worker: `perang-petasan` (`https://perang-petasan.perang-petasan-pp.workers.dev`).
+- Produksi: `https://petasan.yondarprojects.my.id`.
+- Room: `moba`, mode `3v3` / `5v5` / `10v10` (difilter lewat `filterBy(['mode'])`).
+- Client memakai `wss://<host>/ws` same-origin. `VITE_SERVER_URL` dikosongkan.
+- `GET /health` → `{"ok":true,"game":"perang-petasan","runtime":"cloudflare-worker"}`.
+- Free plan: 100K request Worker/hari, Durable Objects SQLite, tanpa kartu kredit.
 
 ---
 
-## Deploy dari GitHub (Render Blueprint)
+## 1. DNS & zone Cloudflare
 
-Repo: `https://github.com/yolanyondar-dot/perang-petasan-web`
+Zone yang dipakai adalah **root** `yondarprojects.my.id` (Free plan).
+Cloudflare saat ini tidak mengizinkan zone hanya untuk subdomain, jadi seluruh
+DNS domain dipindah ke Cloudflare dengan record lama dipertahankan.
 
-### 1. Prasyarat
+Nameserver Cloudflare yang harus dipasang di **Clientzone Rumahweb → Domain →
+Manage → Nameserver Setting**:
 
-- Akun Render terhubung ke GitHub sebagai `yolanyondar-dot`.
-- Repo sudah public sehingga Render bisa membaca tanpa install GitHub App khusus.
-- File `render.yaml` ada di root repo.
-
-Isi `render.yaml`:
-
-```yaml
-services:
-  - type: web
-    name: perang-petasan
-    runtime: node
-    plan: free
-    region: singapore
-    branch: main
-    buildCommand: npm ci && npm run build
-    startCommand: npm start
-    healthCheckPath: /health
-    domains:
-      - petasan.yondarprojects.my.id
-    envVars:
-      - key: NODE_VERSION
-        value: "22"
-      - key: NODE_ENV
-        value: production
+```
+clayton.ns.cloudflare.com
+mira.ns.cloudflare.com
 ```
 
-> Jangan set `PORT` manual — Render yang menyuntiknya.
+Hapus keempat nameserver Rumahweb lama (`ns1.rumahweb.com`,
+`ns2.rumahweb.com`, `ns3.rumahweb.net`, `ns4.rumahweb.net`). Propagasi biasanya
+beberapa menit sampai 24 jam.
 
-### 2. Push perubahan
+Record yang sudah ada di Cloudflare:
 
-Dari root proyek:
+| Name | Type | Content | Proxy |
+|---|---|---|---|
+| `yondarprojects.my.id` | A | `203.175.8.19` | Auto |
+| `www` | CNAME | `yondarprojects.my.id` | Auto |
+| `ceki` | A | `203.175.8.19` | **DNS only** (tidak diubah) |
+| `petasan` | AAAA | `100::` (originless) | **Proxied** (dikelola Cloudflare) |
+| MX / SPF / DKIM / DMARC / SRV cPanel | — | sesuai hasil scan Cloudflare | DNS only |
+
+`petasan.yondarprojects.my.id` terdaftar sebagai **Custom Domain** Worker (bukan
+Route), karena Worker yang menjadi origin aset statis. Konfigurasi di
+`worker/wrangler.toml`:
+
+```toml
+[[routes]]
+pattern = "petasan.yondarprojects.my.id"
+custom_domain = true
+```
+
+> Jangan buat ulang A record `petasan`; Cloudflare yang mengelola record
+> AAAA `100::` untuk Custom Domain ini. Custom Domain dan Route lama tidak
+> boleh aktif bersamaan — Route lama sudah dihapus.
+
+> **Jangan ubah nilai record `ceki.yondarprojects.my.id`.**
+
+---
+
+## 2. Deploy
+
+Prasyarat: Node 22+, `npm ci`, dan `wrangler` login (`npx wrangler login`).
 
 ```bash
-git add .
-git commit -m "Deploy arena PvP ke Render"
-git push origin main
+npm ci
+npm run typecheck
+npm run deploy:cloudflare
 ```
 
-### 3. Buat Blueprint di Render
+`deploy:cloudflare` menjalankan `build:worker` (shared + client) lalu
+`wrangler deploy` dari folder `worker/`. Deploy juga bisa langsung:
 
-1. Buka https://dashboard.render.com → **New +** → **Blueprint**.
-2. Connect repo `yolanyondar-dot/perang-petasan-web`, branch `main`.
-3. Render mendeteksi `render.yaml` → **Apply**.
-4. Tunggu build & deploy selesai. Cek log jika gagal.
-
-Service juga bisa dibuat manual:
-
-- **Runtime:** Node
-- **Build command:** `npm ci && npm run build`
-- **Start command:** `npm start`
-- **Health check:** `/health`
-- **Plan:** Free
-- **Environment:** `NODE_VERSION=22`, `NODE_ENV=production`
-
-### 4. Pasang domain `petasan.yondarprojects.my.id`
-
-`domains` di `render.yaml` hanya mendaftarkan domain di Render; DNS masih harus
-diarahkan manual.
-
-1. Di Render → service `perang-petasan` → **Settings** → **Custom Domains** →
-   salin **DNS target** (bentuknya `<service>.onrender.com`).
-2. Di **cPanel → Zone Editor**, hapus/ubah A record `petasan` yang dibuat saat
-   subdomain dibuat, lalu buat CNAME:
-
-```
-Name:   petasan.yondarprojects.my.id.
-Type:   CNAME
-Target: <DNS target dari Render>
-TTL:    300
+```bash
+npm run build:worker
+npm run deploy -w @pp/worker
 ```
 
-> **Jangan ubah** `ceki.yondarprojects.my.id`.
+Untuk development lokal dengan Worker:
 
-3. Tunggu propagasi DNS. Render akan mengeluarkan sertifikat TLS otomatis.
+```bash
+npm run dev            # client + wrangler dev di :8787
+# atau
+npm run dev -w @pp/worker -- --port 8787
+```
 
-### 5. Verifikasi beta
+---
 
-1. Buka `https://petasan.yondarprojects.my.id/` — logo tampil, stage fighting kartun 2D di latar.
-2. Pilih hero + mode, klik **MASUK ARENA**. Di Network harus tampil:
+## 3. Verifikasi beta
+
+1. `GET https://petasan.yondarprojects.my.id/health` → JSON `ok: true`.
+2. Buka `https://petasan.yondarprojects.my.id/` — logo tampil, stage fighting 2D di latar.
+3. Pilih 4 hero beta (`bocil_sarung`, `abang_ronda`, `tukang_lodong`, `emak_daster`)
+   + mode, klik **MASUK ARENA**. Di Network harus tampil:
    - `POST /ws/matchmake/joinOrCreate/moba` → **200**
-   - `wss://.../ws/<roomId>/<sessionId>` → **101 Switching Protocols**
-3. `GET /health` → `{"ok":true,"game":"perang-petasan"}`.
-4. Buka dua tab dengan mode berbeda; keduanya harus masuk room mode masing-masing.
-5. Console browser tidak ada error.
+   - `wss://petasan.yondarprojects.my.id/ws?session=...` → **101 Switching Protocols**
+4. Buka dua tab dengan mode berbeda; masing-masing harus masuk room mode tersebut
+   (3 / 5 / 20 slot).
+5. Cek `ceki.yondarprojects.my.id` masih seperti semula.
+6. Console browser tidak ada error.
 
-### 6. Troubleshooting Render
+---
+
+## 4. Troubleshooting
 
 | Gejala | Penyebab / solusi |
 |---|---|
-| Build gagal di `npm ci` | Pastikan `package-lock.json` ikut ter-commit. |
-| `404` di `/matchmake/...` | Prefix `/ws` tidak terbuang. Pastikan `server/src/index.ts` versi terbaru aktif. |
-| WS langsung tertutup | Cek Render logs; pastikan start command `npm start`. |
-| Domain belum HTTPS | Cek CNAME di cPanel masih mengarah ke target Render, lalu Render → **Custom Domains** → **Refresh**. |
-| Halaman putih | Cek build Vite sukses dan `client/dist/index.html` ada. |
-| Join pertama lambat | Normal pada free plan; tunggu service bangun (~1 menit). |
+| Domain belum aktif | NS Rumahweb belum diganti / propagasi. Cek `dig NS yondarprojects.my.id`. |
+| `520` / halaman putih | Cek build Vite sukses dan `client/dist/index.html` ada; lihat `wrangler tail`. |
+| WebSocket gagal | Pastikan record `petasan` **proxied** dan route Worker aktif. |
+| `401 session tidak valid` | Klik join ulang; sesi matchmaker berumur pendek. |
+| Mode tercampur | Pastikan `filterBy(['mode'])` dan header `x-pp-mode` masih ada di `worker/src/index.ts`. |
+| Email berhenti | Cek MX/SPF/DKIM/DMARC masih ada di Cloudflare DNS. |
 
 ---
 
@@ -141,13 +138,4 @@ sudo certbot --nginx -d example.com
 ```
 
 `deploy/nginx.conf` dan `ecosystem.config.cjs` disimpan sebagai referensi VPS.
-
----
-
-## Catatan environment
-
-- `client/.env.production`: biarkan kosong. Endpoint default sudah same-origin `/ws`.
-- `.env.production` di root hanya dipakai PM2/VPS. Di Render, Render yang men-set
-  `PORT`. Jangan set `HOST=127.0.0.1` di Render.
-- `CLIENT_DIST` opsional untuk override lokasi `client/dist`.
-- Deploy lama Koyeb dibatalkan karena akun organisasi meminta upgrade plan.
+Deploy Render/Koyeb dibatalkan (butuh kartu kredit / upgrade plan).

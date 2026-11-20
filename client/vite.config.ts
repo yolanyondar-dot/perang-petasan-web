@@ -1,15 +1,14 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath, URL } from 'node:url';
 
-const gameServer = process.env.GAME_SERVER_URL ?? 'ws://localhost:2567';
+const gameServer = process.env.GAME_SERVER_URL ?? 'http://localhost:8787';
 
-/** Di hosting, client memakai satu origin: /ws diteruskan ke Colyseus. */
+/** Dev: Vite meneruskan /ws ke Wrangler. Produksi: Worker melayani /ws di origin yang sama. */
 const proxy = {
   '/ws': {
     target: gameServer,
     ws: true,
     changeOrigin: true,
-    rewrite: (path: string) => path.replace(/^\/ws/, ''),
   },
 };
 

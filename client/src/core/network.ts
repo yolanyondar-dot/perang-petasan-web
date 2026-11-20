@@ -1,214 +1,195 @@
-import { Client, type Room } from '@colyseus/sdk';
 import {
   MOBA_MESSAGES,
   type ClientMobaState,
-  type MobaBossView,
   type MobaBuyMessage,
-  type MobaEffectView,
-  type MobaHeroView,
   type MobaJoinOptions,
   type MobaKoMessage,
+  type MobaLoadout,
   type MobaMatchEndMessage,
-  type MobaMinionView,
   type MobaMoveMessage,
-  type MobaProjectileView,
   type MobaSkillKey,
   type MobaSkillMessage,
-  type MobaTurretView,
-  type MobaUnitView,
+  type RoomMode,
 } from '@pp/shared';
-import type { MobaLoadout, RoomMode } from '@pp/shared';
 
-/** Baris schema Colyseus yang sudah diserialisasi. */
-type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-
-function toRecord<T>(map: Row | undefined, convert: (row: Row) => T): Record<string, T> {
-  const result: Record<string, T> = {};
-  if (!map || typeof map.forEach !== 'function') return result;
-  map.forEach((row: Row, key: string) => {
-    result[key] = convert(row);
-  });
-  return result;
+interface MatchmakeResponse {
+  id: string;
+  roomId: string;
+  mode: RoomMode;
 }
 
-function unit(row: Row): MobaUnitView {
-  return {
-    id: row.id,
-    kind: row.kind ?? 'hero',
-    team: row.team,
-    x: row.x,
-    z: row.z,
-    facing: row.facing,
-    hp: row.hp,
-    maxHp: row.maxHp,
-    alive: row.alive,
-    level: row.level ?? 1,
-    anim: row.anim ?? 'idle',
-    lane: row.lane,
-    tier: row.tier,
-  };
+type Envelope =
+  | { t: 'state'; s: ClientMobaState }
+  | { t: 'message'; type: string; data: unknown };
+
+function normalizeWsUrl(input: string): string {
+  const url = new URL(input, location.href);
+  if (url.protocol === 'http:') url.protocol = 'ws:';
+  if (url.protocol === 'https:') url.protocol = 'wss:';
+  if (!url.pathname.endsWith('/ws')) {
+    url.pathname = `${url.pathname.replace(/\/$/, '')}/ws`;
+  }
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/$/, '');
 }
 
-function hero(row: Row): MobaHeroView {
-  return {
-    ...unit(row),
-    kind: 'hero',
-    heroId: row.heroId,
-    name: row.name,
-    isBot: row.isBot,
-    gold: row.gold,
-    kills: row.kills,
-    deaths: row.deaths,
-    assists: row.assists,
-    xp: row.xp,
-    items: row.items ? Array.from(row.items as Iterable<string>) : [],
-    cdBasic: row.cdBasic,
-    cdSkill1: row.cdSkill1,
-    cdSkill2: row.cdSkill2,
-    cdUltimate: row.cdUltimate,
-    respawnIn: row.respawnIn,
-    vx: row.vx,
-    vz: row.vz,
-    stocks: row.stocks,
-    maxStocks: row.maxStocks,
-    grounded: row.grounded,
-    jumpCount: row.jumpCount,
-    combo: row.combo,
-    speedBoostUntil: row.speedBoostUntil,
-    slowUntil: row.slowUntil,
-    stunUntil: row.stunUntil,
-    hitstunUntil: row.hitstunUntil,
-    dashUntil: row.dashUntil,
-  };
-}
-
-function minion(row: Row): MobaMinionView {
-  return { ...unit(row), kind: 'minion', lane: row.lane };
-}
-
-function turret(row: Row): MobaTurretView {
-  return { ...unit(row), kind: 'turret', lane: row.lane, tier: row.tier };
-}
-
-function boss(row: Row): MobaBossView {
-  return { ...unit(row), kind: 'boss', respawnIn: row.respawnIn };
-}
-
-function projectile(row: Row): MobaProjectileView {
-  return {
-    id: row.id,
-    team: row.team,
-    x: row.x,
-    z: row.z,
-    vx: row.vx,
-    vz: row.vz,
-    radius: row.radius,
-    damage: row.damage,
-    ttlMs: row.ttlMs,
-    color: row.color,
-    aoeRadius: row.aoeRadius,
-    stunMs: row.stunMs,
-    slowPercent: row.slowPercent,
-    slowMs: row.slowMs,
-    ownerId: row.ownerId,
-  };
-}
-
-function effect(row: Row): MobaEffectView {
-  return {
-    id: row.id,
-    kind: row.kind,
-    x: row.x,
-    z: row.z,
-    radius: row.radius,
-    ttlMs: row.ttlMs,
-    color: row.color,
-  };
-}
-
-function resolveEndpoint(): string {
+function resolveWsUrl(): string {
   const configured = import.meta.env.VITE_SERVER_URL;
-  if (typeof configured === 'string' && configured.trim()) return configured.trim();
-
+  if (typeof configured === 'string' && configured.trim()) {
+    return normalizeWsUrl(configured.trim());
+  }
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
   if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-    return 'ws://localhost:2567';
+    return 'ws://localhost:8787/ws';
   }
-  // Produksi: Render meneruskan /ws/ ke Colyseus di origin yang sama.
+  // Produksi Cloudflare: satu origin, /ws ditangani Worker yang sama.
   return `${protocol}://${location.host}/ws`;
 }
 
+function resolveHttpBase(wsUrl: string): string {
+  const url = new URL(wsUrl, location.href);
+  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+  url.pathname = '';
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/$/, '');
+}
+
+/** Client ringan untuk server Worker/Durable Object. Bentuk state tetap ClientMobaState. */
 class NetworkManager {
-  private readonly client = new Client(resolveEndpoint());
-  room: Room<any, Row> | null = null;
+  private readonly wsUrl = resolveWsUrl();
+  private readonly httpBase = resolveHttpBase(this.wsUrl);
+  private socket: WebSocket | null = null;
+  private stateValue: ClientMobaState | null = null;
+  private leaving = false;
+
   sessionId = '';
+  roomId = '';
   onMatchEnd: ((message: MobaMatchEndMessage) => void) | null = null;
   onKo: ((message: MobaKoMessage) => void) | null = null;
   onDisconnect: (() => void) | null = null;
 
   async join(mode: RoomMode, loadout: MobaLoadout, name: string): Promise<void> {
     await this.leave();
+    this.leaving = false;
+
     const options: MobaJoinOptions = { mode, loadout, name, fillBots: true };
-    const room = await this.client.joinOrCreate<Row>('moba', options);
-    this.room = room;
-    this.sessionId = room.sessionId;
-
-    room.onMessage(MOBA_MESSAGES.WELCOME, () => undefined);
-    room.onMessage<MobaMatchEndMessage>(MOBA_MESSAGES.MATCH_END, (message) => this.onMatchEnd?.(message));
-    room.onMessage<MobaKoMessage>(MOBA_MESSAGES.KO, (message) => this.onKo?.(message));
-    room.onLeave(() => {
-      if (this.room === room) {
-        this.room = null;
-        this.onDisconnect?.();
-      }
+    const response = await fetch(`${this.httpBase}/ws/matchmake/joinOrCreate/moba`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(options),
     });
-  }
+    if (!response.ok) {
+      throw new Error(`Matchmaking gagal (${response.status})`);
+    }
+    const match = (await response.json()) as MatchmakeResponse;
 
-  async leave(): Promise<void> {
-    const room = this.room;
-    this.room = null;
-    if (room) await room.leave();
-  }
+    const url = new URL(this.wsUrl, location.href);
+    url.searchParams.set('session', match.id);
+    const socket = new WebSocket(url.toString());
+    this.socket = socket;
+    this.sessionId = match.id;
+    this.roomId = match.roomId;
+    this.stateValue = null;
 
-  get state(): ClientMobaState | null {
-    const s = this.room?.state as Row | undefined;
-    if (!s) return null;
-    return {
-      mode: s.mode,
-      phase: s.phase,
-      elapsedMs: s.elapsedMs,
-      timeLeft: s.timeLeft,
-      scoreMerah: s.scoreMerah,
-      scorePutih: s.scorePutih,
-      baseHpMerah: s.baseHpMerah,
-      baseHpPutih: s.baseHpPutih,
-      bossSpawnIn: s.bossSpawnIn,
-      round: s.round,
-      intermissionMs: s.intermissionMs,
-      roundWinner: s.roundWinner,
-      winner: s.winner,
-      heroes: toRecord(s.heroes, hero),
-      minions: toRecord(s.minions, minion),
-      turrets: toRecord(s.turrets, turret),
-      bases: toRecord(s.bases, unit),
-      boss: s.boss && s.boss.id ? boss(s.boss) : null,
-      projectiles: toRecord(s.projectiles, projectile),
-      effects: toRecord(s.effects, effect),
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        socket.close();
+        reject(new Error('WebSocket timeout'));
+      }, 10_000);
+
+      socket.onopen = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      socket.onerror = () => {
+        clearTimeout(timer);
+        if (!this.leaving) reject(new Error('Gagal membuka WebSocket'));
+      };
+    });
+
+    socket.onmessage = (event) => this.onEnvelope(event);
+    socket.onclose = () => {
+      if (this.socket !== socket) return;
+      this.socket = null;
+      this.stateValue = null;
+      if (!this.leaving) this.onDisconnect?.();
     };
   }
 
+  async leave(): Promise<void> {
+    const socket = this.socket;
+    this.socket = null;
+    this.stateValue = null;
+    if (!socket) return;
+
+    this.leaving = true;
+    try {
+      socket.close(1000, 'leave');
+    } catch {
+      // Socket bisa sudah tertutup.
+    }
+    await new Promise<void>((resolve) => {
+      if (socket.readyState === WebSocket.CLOSED) {
+        resolve();
+        return;
+      }
+      socket.addEventListener('close', () => resolve(), { once: true });
+    });
+    this.leaving = false;
+  }
+
+  get state(): ClientMobaState | null {
+    return this.stateValue;
+  }
+
+  private onEnvelope(event: MessageEvent<string>): void {
+    let envelope: Envelope;
+    try {
+      envelope = JSON.parse(event.data) as Envelope;
+    } catch {
+      return;
+    }
+
+    if (envelope.t === 'state') {
+      this.stateValue = envelope.s;
+      return;
+    }
+    if (envelope.t !== 'message') return;
+
+    if (envelope.type === MOBA_MESSAGES.WELCOME) {
+      const data = envelope.data as { id?: string; roomId?: string } | undefined;
+      if (data?.id) this.sessionId = data.id;
+      if (data?.roomId) this.roomId = data.roomId;
+      return;
+    }
+    if (envelope.type === MOBA_MESSAGES.MATCH_END) {
+      this.onMatchEnd?.(envelope.data as MobaMatchEndMessage);
+      return;
+    }
+    if (envelope.type === MOBA_MESSAGES.KO) {
+      this.onKo?.(envelope.data as MobaKoMessage);
+    }
+  }
+
+  private send(type: string, data: unknown): void {
+    if (this.socket?.readyState !== WebSocket.OPEN) return;
+    this.socket.send(JSON.stringify({ t: type, data }));
+  }
+
   sendMove(message: MobaMoveMessage): void {
-    this.room?.send(MOBA_MESSAGES.MOVE, message);
+    this.send(MOBA_MESSAGES.MOVE, message);
   }
 
   sendSkill(key: MobaSkillKey, aimX: number, aimZ: number): void {
     const message: MobaSkillMessage = { key, aimX, aimZ };
-    this.room?.send(MOBA_MESSAGES.SKILL, message);
+    this.send(MOBA_MESSAGES.SKILL, message);
   }
 
   sendBuy(itemId: string): void {
     const message: MobaBuyMessage = { itemId };
-    this.room?.send(MOBA_MESSAGES.BUY, message);
+    this.send(MOBA_MESSAGES.BUY, message);
   }
 }
 
