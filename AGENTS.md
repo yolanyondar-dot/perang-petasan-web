@@ -25,6 +25,7 @@
   - 11 portrait hero di `characters/` dipakai untuk kartu Hero Select, HUD, dan token melingkar di arena.
   - `maps/design_map.png` sebagai seni peta arena + latar minimap. `maps/design_tower.png` dan `maps/design_map_tower.png` tersimpan sebagai arsip desain (tidak dipakai di arena).
   - `effects/efek_ledakan.png` sebagai overlay ledakan.
+  - `effects/skills/skill-atlas.png` + `manifest.json`: atlas 8 efek × 8 frame (skill 1 & ultimate 4 hero beta) untuk animasi VFX; dihasilkan oleh `npm run assets:skills` lewat `scripts/generate-skill-atlas.mjs`.
 
 ## 4. Arena Map & Gameplay Mechanics (Colyseus Authoritative)
 - **Arena Simetris Kampung (`160x160` world units):**
