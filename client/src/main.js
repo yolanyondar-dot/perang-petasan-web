@@ -867,8 +867,13 @@ async function bootstrap() {
       if (!s.connected && roomUrlEl && !network.roomCode && !isOnlineClient) {
         roomUrlEl.textContent = `Server belum terhubung (${s.error || s.reason || network.serverUrl}).`;
       }
-      if (isOnlineClient && !s.connected && localPlayerId) {
-        if (roomUrlEl) roomUrlEl.textContent = `Koneksi terputus (${s.reason || 'disconnected'}). Coba refresh.`;
+      if (isOnlineClient) {
+        if (s.connected) {
+          if (partyMsgEl && overlay && !overlay.classList.contains('hidden')) partyMsgEl.textContent = 'WS terhubung, menunggu joined-room...';
+        } else if (localPlayerId) {
+          if (roomUrlEl) roomUrlEl.textContent = `Koneksi terputus (${s.reason || 'disconnected'}). Coba refresh.`;
+          if (partyMsgEl) partyMsgEl.textContent = `Terputus (${s.reason || 'disconnected'}).`;
+        }
       }
     },
     onPlayerJoined: ({ controllerId, playerId, name, kind, color, characterType }) => {
@@ -897,7 +902,10 @@ async function bootstrap() {
       }
     },
     onGameState: (msg) => {
-      if (isOnlineClient) applyHostState(msg?.state);
+      if (isOnlineClient) {
+        if (partyMsgEl) partyMsgEl.textContent = `Menerima data host... started=${!!msg?.state?.started}`;
+        applyHostState(msg?.state);
+      }
     },
   });
 
