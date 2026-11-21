@@ -390,6 +390,30 @@
         });
         joinBtn.addEventListener('click', connectAndJoin);
 
+        // Auto-fill room dari QR / query param
+        (function initRoomFromQuery() {
+          const roomFromUrl = (qs.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+          if (!roomFromUrl) return;
+          roomInput.value = roomFromUrl;
+          let hasSavedName = false;
+          try {
+            const raw = localStorage.getItem(PROFILE_KEY);
+            const p = raw ? JSON.parse(raw) : null;
+            hasSavedName = !!(p && String(p.name || '').trim());
+          } catch (_) {}
+          const hasName = hasSavedName || !!nameInput.value.trim();
+          if (roomFromUrl.length === 4) {
+            if (hasName) {
+              setStatus('Kode room terisi dari QR. Menggabungkan otomatis...', true);
+              setTimeout(() => { if (!joined) connectAndJoin(); }, 250);
+            } else {
+              setStatus('Kode room terisi dari QR. Isi nama lalu tekan Gabung.', true);
+            }
+          } else {
+            setStatus('Kode room dari QR tidak valid.', false);
+          }
+        })();
+
         // --- Joystick --------------------------------------------------------
         const joyBase = document.getElementById('joy-base');
         const joyKnob = document.getElementById('joy-knob');

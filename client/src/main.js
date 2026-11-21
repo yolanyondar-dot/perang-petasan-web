@@ -3,6 +3,7 @@
  * Merangkai physics, arena, player, petasan, dan couch multiplayer.
  */
 import * as THREE from 'three';
+import QRCode from 'qrcode';
 import { initPhysics, stepPhysics, getWorld, MAX_PHYSICS_DT } from './physics.js';
 import { createArena, ARENA, ARENA_TYPES } from './arena.js';
 import { createPlayer } from './player.js';
@@ -30,6 +31,48 @@ const partyUrlEl = document.getElementById('party-url');
 const partyPlayersEl = document.getElementById('party-players');
 const partyMsgEl = document.getElementById('party-msg');
 const btnPartyStart = document.getElementById('btn-party-start');
+const partyQrEl = document.getElementById('party-qr');
+const btnCopyController = document.getElementById('btn-copy-controller');
+const partyHostOriginEl = document.getElementById('party-host-origin');
+const HOST_ORIGIN_KEY = 'pp_host_origin';
+function getHostOriginOverride() {
+  const raw = (partyHostOriginEl?.value || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw.includes('://') ? raw : `http://${raw}`);
+    return u.origin;
+  } catch (_) { return ''; }
+}
+function getControllerShareUrl(roomCode) {
+  const code = String(roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  const origin = getHostOriginOverride() || window.location.origin;
+  return `${origin}/controller.html?room=${encodeURIComponent(code)}`;
+}
+async function renderPartyQr(roomCode) {
+  const code = String(roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  const url = code ? getControllerShareUrl(code) : '';
+  if (partyUrlEl) partyUrlEl.textContent = url || '';
+  if (partyQrEl) {
+    const ctx = partyQrEl.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, partyQrEl.width, partyQrEl.height);
+    if (code) {
+      try { await QRCode.toCanvas(partyQrEl, url, { width: 180, margin: 1 }); }
+      catch (e) { console.warn('QR render failed', e); }
+    }
+  }
+}
+try { const savedOrigin = localStorage.getItem(HOST_ORIGIN_KEY); if (savedOrigin && partyHostOriginEl) partyHostOriginEl.value = savedOrigin; } catch (_) {}
+partyHostOriginEl?.addEventListener('input', () => {
+  try { localStorage.setItem(HOST_ORIGIN_KEY, partyHostOriginEl.value.trim()); } catch (_) {}
+  renderPartyQr(network?.roomCode || partyCodeEl?.textContent || '');
+});
+btnCopyController?.addEventListener('click', async () => {
+  const code = network?.roomCode || partyCodeEl?.textContent || '';
+  const url = getControllerShareUrl(code);
+  if (!/room=/.test(url) || !code || code.includes('-')) return;
+  try { await navigator.clipboard.writeText(url); if (partyMsgEl) { partyMsgEl.textContent = 'Link controller disalin!'; partyMsgEl.style.color = '#9bf6a3'; } }
+  catch (_) { window.prompt('Salin link controller:', url); }
+});
 const hudStats = document.getElementById('hud-stats');
 const roomCodeEl = document.getElementById('room-code');
 const roomUrlEl = document.getElementById('room-url');
@@ -741,8 +784,8 @@ async function bootstrap() {
   const partyStartPromise = isOnlineHost ? new Promise((r) => { resolvePartyStart = r; }) : Promise.resolve();
   function refreshPartyUI() {
     if (!partyPanel) return;
-    if (partyCodeEl) partyCodeEl.textContent = network.roomCode || lobby.roomCode || '----';
-    if (partyUrlEl) partyUrlEl.textContent = `${location.origin}${location.pathname}`;
+    const code = network.roomCode || lobby.roomCode || '----';
+    if (partyCodeEl) partyCodeEl.textContent = code;
     if (partyPlayersEl) {
       const items = [`<div>👑 ${playerName} (Host)</div>`];
       for (const [, entry] of remotes.entries()) {
@@ -751,6 +794,7 @@ async function bootstrap() {
       }
       partyPlayersEl.innerHTML = items.join('');
     }
+    renderPartyQr(code);
   }
   btnPartyStart?.addEventListener('click', () => {
     gameStarted = true;
@@ -758,32 +802,37 @@ async function bootstrap() {
   });
 
   const network = createNetwork({
-    onRoomCreated: ({ roomCode, controllerUrl }) => {
+    onRoomCreated: ({ roomCode }) => {
+      const shareUrl = getControllerShareUrl(roomCode);
       if (roomCodeEl) roomCodeEl.textContent = roomCode;
       if (roomUrlEl) {
-        roomUrlEl.innerHTML = `Kode room: <b>${roomCode}</b><br>Buka <b>${controllerUrl}</b> di HP (Wi-Fi sama)<br><span class="muted">Mode: online host</span>`;
+        roomUrlEl.innerHTML = `Kode room: <b>${roomCode}</b><br>Buka <b>${shareUrl}</b> di HP (Wi-Fi sama)<br><span class="muted">Mode: online host</span>`;
       }
       if (isOnlineHost) {
         if (overlayStatus) overlayStatus.textContent = 'Party dibuat! Bagikan kode ke teman.';
         if (lobbyMain) lobbyMain.style.display = 'none';
         if (partyPanel) partyPanel.style.display = 'block';
         refreshPartyUI();
+        renderPartyQr(roomCode);
       }
     },
     onJoinedRoom: (msg) => {
       if (isOnlineClient) {
         localPlayerId = msg.playerId || msg.controllerId || localPlayerId;
-        if (roomCodeEl) roomCodeEl.textContent = msg.roomCode || lobby.roomCode || '-';
-        if (roomUrlEl) roomUrlEl.innerHTML = `Terhubung ke room <b>${msg.roomCode || lobby.roomCode}</b><br><span class="muted">Mode: online player</span>`;
+        const code = msg.roomCode || lobby.roomCode || '-';
+        const shareUrl = getControllerShareUrl(code);
+        if (roomCodeEl) roomCodeEl.textContent = code;
+        if (roomUrlEl) roomUrlEl.innerHTML = `Terhubung ke room <b>${code}</b><br><span class="muted">Mode: online player</span>`;
         if (overlayStatus) overlayStatus.textContent = 'Terhubung! Menunggu game...';
         if (lobbyMain) lobbyMain.style.display = 'none';
         if (partyPanel) {
           partyPanel.style.display = 'block';
-          if (partyCodeEl) partyCodeEl.textContent = msg.roomCode || lobby.roomCode || '----';
+          if (partyCodeEl) partyCodeEl.textContent = code;
           if (partyMsgEl) partyMsgEl.textContent = 'Terhubung. Menunggu host memulai...';
           const startBtn = document.getElementById('btn-party-start');
           if (startBtn) { startBtn.style.display = 'none'; }
         }
+        renderPartyQr(code);
         // wait for host to start (state.started)
       }
     },
