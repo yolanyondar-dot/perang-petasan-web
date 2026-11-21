@@ -786,10 +786,13 @@ async function bootstrap() {
       if (typeof state.round === 'number') roundIndex = state.round;
       if (typeof state.matchOver === 'boolean') matchOver = state.matchOver;
       if (typeof state.roundOver === 'boolean') roundOver = state.roundOver;
-      // compat: old host doesn't send started; any game-state means host is running
-      if (state.started || state.started === undefined) {
+      const startedFlag = state.started === undefined ? true : !!state.started;
+      if (startedFlag) {
         gameStarted = true;
         overlay?.classList.add('hidden');
+      } else {
+        // lobby sync: keep party panel updated while waiting for host start
+        refreshPartyUI();
       }
       updateRoundHud();
       updateModeHud();
@@ -805,10 +808,20 @@ async function bootstrap() {
     const code = network.roomCode || lobby.roomCode || '----';
     if (partyCodeEl) partyCodeEl.textContent = code;
     if (partyPlayersEl) {
-      const items = [`<div>👑 ${playerName} (Host)</div>`];
-      for (const [, entry] of remotes.entries()) {
-        const n = entry?.player?.name || 'Pemain';
-        items.push(`<div>🎮 ${n}</div>`);
+      const items = [];
+      if (isOnlineClient) {
+        items.push(`<div>🎮 ${playerName} (Kamu)</div>`);
+        for (const [id, entry] of remotes.entries()) {
+          const n = entry?.player?.name || 'Pemain';
+          const label = id === 'host' ? '👑' : '🎮';
+          items.push(`<div>${label} ${n}</div>`);
+        }
+      } else {
+        items.push(`<div>👑 ${playerName} (Host)</div>`);
+        for (const [, entry] of remotes.entries()) {
+          const n = entry?.player?.name || 'Pemain';
+          items.push(`<div>🎮 ${n}</div>`);
+        }
       }
       partyPlayersEl.innerHTML = items.join('');
     }
@@ -1176,7 +1189,11 @@ async function bootstrap() {
     if (partyPanel) partyPanel.style.display = 'block';
     if (partyMsgEl) partyMsgEl.textContent = 'Menunggu room dibuat...';
     overlay?.classList.remove('hidden');
+    const lobbyInterval = setInterval(() => {
+      if (network.connected) network.send({ type: 'game-state', state: buildHostState() });
+    }, 500);
     await partyStartPromise;
+    clearInterval(lobbyInterval);
     overlay?.classList.add('hidden');
     showRoundBanner('Ronde 1', 'Party dimulai!', 1500);
   } else {
