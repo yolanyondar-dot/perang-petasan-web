@@ -221,7 +221,12 @@
 
     <div id="powerup-hud" style="position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;color:#fff;font-size:12px;text-shadow:0 2px 8px rgba(0,0,0,.8);pointer-events:none;"></div>
 
-    <button id="controls-settings-btn" type="button" style="position:fixed;top:10px;left:10px;z-index:9;border:0;border-radius:10px;padding:8px 10px;background:rgba(15,23,42,.7);color:#fff;font-size:14px;cursor:pointer;">⚙️ Kontrol</button>
+    <button id="settings-btn" type="button" style="position:fixed;top:10px;left:10px;z-index:9;border:0;border-radius:10px;padding:8px 10px;background:rgba(15,23,42,.7);color:#fff;font-size:14px;cursor:pointer;">⚙️ Setting</button>
+    <div id="settings-menu" style="display:none;position:fixed;top:48px;left:10px;z-index:9;width:min(220px,calc(100vw - 20px));background:rgba(15,23,42,.94);color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px;backdrop-filter:blur(4px);">
+      <button id="menu-sound" type="button" style="width:100%;text-align:left;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:#fff;cursor:pointer;">🔊 Suara</button>
+      <button id="menu-controls" type="button" style="width:100%;text-align:left;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:#fff;cursor:pointer;">🎮 Kontrol</button>
+      <button id="menu-exit" type="button" style="width:100%;text-align:left;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:#ffb4b4;cursor:pointer;">🚪 Keluar</button>
+    </div>
     <div id="controls-settings" style="display:none;position:fixed;top:48px;left:10px;z-index:9;width:min(280px,calc(100vw - 20px));background:rgba(15,23,42,.92);color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;font-size:12px;backdrop-filter:blur(4px);">
       <div style="font-weight:800;color:#ffd54f;margin-bottom:8px;">Atur Kontrol</div>
       <label>Ukuran Joystick <input id="ctl-joy-size" type="range" min="90" max="220" value="150" style="width:100%"></label>

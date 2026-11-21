@@ -604,7 +604,8 @@ async function bootstrap() {
     for (let i = 0; i < bots.length; i++) arr.push(serializePlayer(bots[i].player, `bot:${i}`));
     return {
       players: arr,
-      round: roundIndex, matchOver, roundOver, mode: modeManager?.mode, arena: currentArenaType,
+      round: roundIndex, matchOver, roundOver, mode: modeManager?.mode, arena: arena?.type || ARENA.type,
+      started: !!gameStarted,
     };
   }
 
@@ -670,6 +671,10 @@ async function bootstrap() {
       if (typeof state.round === 'number') roundIndex = state.round;
       if (typeof state.matchOver === 'boolean') matchOver = state.matchOver;
       if (typeof state.roundOver === 'boolean') roundOver = state.roundOver;
+      if (state.started) {
+        gameStarted = true;
+        overlay?.classList.add('hidden');
+      }
       updateRoundHud();
       updateModeHud();
     }
@@ -677,6 +682,7 @@ async function bootstrap() {
 
   // --- Network -------------------------------------------------------------
   let resolvePartyStart = null;
+  let gameStarted = !isOnlineHost;
   const partyStartPromise = isOnlineHost ? new Promise((r) => { resolvePartyStart = r; }) : Promise.resolve();
   function refreshPartyUI() {
     if (!partyPanel) return;
@@ -691,7 +697,10 @@ async function bootstrap() {
       partyPlayersEl.innerHTML = items.join('');
     }
   }
-  btnPartyStart?.addEventListener('click', () => { if (resolvePartyStart) { resolvePartyStart(); resolvePartyStart = null; } });
+  btnPartyStart?.addEventListener('click', () => {
+    gameStarted = true;
+    if (resolvePartyStart) { resolvePartyStart(); resolvePartyStart = null; }
+  });
 
   const network = createNetwork({
     onRoomCreated: ({ roomCode, controllerUrl }) => {
@@ -720,8 +729,7 @@ async function bootstrap() {
           const startBtn = document.getElementById('btn-party-start');
           if (startBtn) { startBtn.style.display = 'none'; }
         }
-        // keep overlay visible briefly, hide when first state arrives or after short delay
-        setTimeout(() => overlay?.classList.add('hidden'), 800);
+        // wait for host to start (state.started)
       }
     },
     onJoinError: (msg) => {
@@ -960,8 +968,12 @@ async function bootstrap() {
   bindTcBtn('tc-bomb', () => { touchBomb = true; if (!isOnlineClient) trySpawnAndHold(); }, () => { touchBomb = false; if (!isOnlineClient) tryThrowHeld(); });
   showTouchControls(true);
 
-  // --- Control layout settings ---------------------------------------------
-  const ctlBtn = document.getElementById('controls-settings-btn');
+  // --- Settings menu / control layout --------------------------------------
+  const settingsBtn = document.getElementById('settings-btn');
+  const settingsMenu = document.getElementById('settings-menu');
+  const menuSound = document.getElementById('menu-sound');
+  const menuControls = document.getElementById('menu-controls');
+  const menuExit = document.getElementById('menu-exit');
   const ctlPanel = document.getElementById('controls-settings');
   const ctlJoy = document.getElementById('ctl-joy-size');
   const ctlBtnSize = document.getElementById('ctl-btn-size');
@@ -995,8 +1007,17 @@ async function bootstrap() {
     try { const raw = localStorage.getItem(CTL_KEY); if (raw) return JSON.parse(raw); } catch (_) {}
     return { joy: 150, btn: 100, bottom: 24, side: 24 };
   }
+  function syncSoundLabel() { if (menuSound) menuSound.textContent = Audio.isMuted() ? '🔇 Suara: Mati' : '🔊 Suara: Nyala'; }
   applyControlLayout(loadControlLayout());
-  ctlBtn?.addEventListener('click', () => { if (ctlPanel) ctlPanel.style.display = ctlPanel.style.display === 'none' ? 'block' : 'none'; });
+  syncSoundLabel();
+  settingsBtn?.addEventListener('click', () => {
+    const open = settingsMenu?.style.display !== 'none';
+    if (settingsMenu) settingsMenu.style.display = open ? 'none' : 'block';
+    if (ctlPanel) ctlPanel.style.display = 'none';
+  });
+  menuSound?.addEventListener('click', () => { Audio.toggleMute(); syncSoundLabel(); });
+  menuControls?.addEventListener('click', () => { if (settingsMenu) settingsMenu.style.display = 'none'; if (ctlPanel) ctlPanel.style.display = 'block'; });
+  menuExit?.addEventListener('click', () => { window.location.href = window.location.origin + window.location.pathname; });
   ctlClose?.addEventListener('click', () => { if (ctlPanel) ctlPanel.style.display = 'none'; });
   ctlReset?.addEventListener('click', () => applyControlLayout({ joy: 150, btn: 100, bottom: 24, side: 24 }));
   const onCtl = () => applyControlLayout({ joy: ctlJoy?.value, btn: ctlBtnSize?.value, bottom: ctlBottom?.value, side: ctlSide?.value });
@@ -1032,7 +1053,7 @@ async function bootstrap() {
     overlay?.classList.add('hidden');
     showRoundBanner('Ronde 1', 'Siap bertarung!', 1500);
   }
-  updateRoundHud();
+  if (!isOnlineClient) resetMatch(); else updateRoundHud();
 
   function frame() {
     requestAnimationFrame(frame);
