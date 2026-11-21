@@ -6,6 +6,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { getWorld, createRigidBody, createCollider } from './physics.js';
 import { ARENA } from './arena.js';
 import { PHYSICS_TUNING } from './tuning.js';
+import { buildPetasanMockup } from './assetsMockup.js';
 
 const DEFAULT_FUSE = 2.2;
 const FAST_FLICKER_BELOW = 0.6;
@@ -13,70 +14,27 @@ const FAST_FLICKER_BELOW = 0.6;
 let nextId = 1;
 
 function makePetasanMesh(type = 'normal') {
-  const group = new THREE.Group();
-  group.name = `petasan-${type}`;
+  const variant = ['normal', 'banting', 'renteng'].includes(type) ? type : 'normal';
+  const mockup = buildPetasanMockup(variant);
+  const group = mockup.group;
+  group.name = `petasan-${variant}`;
 
-  const style = type === 'banting'
-    ? { body: 0xff6d00, band: 0xffeb3b, cap: 0x212121, spark: 0xff9100, emissive: 0xff3d00 }
-    : type === 'renteng'
-      ? { body: 0x43a047, band: 0xff5252, cap: 0x1b5e20, spark: 0xff5252, emissive: 0xff1744 }
-      : { body: 0xe53935, band: 0xffd54f, cap: 0x1b1b1b, spark: 0xffcc33, emissive: 0xff6600 };
-
-  const bodyMat = new THREE.MeshStandardMaterial({ color: style.body, roughness: 0.35, metalness: 0.05 });
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.7, 14), bodyMat);
-  body.castShadow = true;
-  body.receiveShadow = true;
-  group.add(body);
-
-  const capMat = new THREE.MeshStandardMaterial({ color: style.cap, roughness: 0.7 });
-  const topCap = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.08, 14), capMat);
-  topCap.position.y = 0.33;
-  topCap.castShadow = true;
-  group.add(topCap);
-  const bottomCap = topCap.clone();
-  bottomCap.position.y = -0.33;
-  group.add(bottomCap);
-
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.185, 0.06, 14), new THREE.MeshStandardMaterial({ color: style.band, roughness: 0.5 }));
-  band.position.y = 0.05;
-  group.add(band);
-
-  const fuse = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.025, 0.025, 0.28, 8),
-    new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.9 }),
-  );
-  fuse.position.set(0, 0.49, 0);
-  group.add(fuse);
-
+  // Spark dari mockup diganti material agar bisa animasi kedip
+  const spark = mockup.spark;
   const sparkMat = new THREE.MeshStandardMaterial({
-    color: style.spark,
-    emissive: style.emissive,
-    emissiveIntensity: 2.2,
+    color: 0xfff3c4,
+    emissive: 0xff7a18,
+    emissiveIntensity: 1.2,
     roughness: 0.2,
+    toneMapped: false,
   });
-  const spark = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 10), sparkMat);
-  spark.position.set(0, 0.66, 0);
-  group.add(spark);
+  spark.material = sparkMat;
 
-  const sparkLight = new THREE.PointLight(style.emissive, 1.2, 2.5);
+  const sparkLight = new THREE.PointLight(0xff7a18, 1.2, 2.5);
   sparkLight.position.copy(spark.position);
   group.add(sparkLight);
 
-  // Penanda visual tipe
-  if (type === 'renteng') {
-    for (let i = -1; i <= 1; i += 1) {
-      const mini = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), new THREE.MeshStandardMaterial({ color: 0xff1744, emissive: 0xff5252, emissiveIntensity: 0.8 }));
-      mini.position.set(i * 0.09, -0.05, 0.17);
-      group.add(mini);
-    }
-  }
-  if (type === 'banting') {
-    const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.018, 8, 20), new THREE.MeshStandardMaterial({ color: 0xffeb3b, emissive: 0xff9800, emissiveIntensity: 0.5 }));
-    stripe.rotation.x = Math.PI / 2;
-    stripe.position.y = -0.15;
-    group.add(stripe);
-  }
-
+  group.traverse((obj) => { if (obj.isMesh) { obj.castShadow = true; obj.receiveShadow = true; } });
   return { group, spark, sparkMat, sparkLight };
 }
 

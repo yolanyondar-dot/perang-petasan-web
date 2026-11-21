@@ -38,7 +38,9 @@ export default {
         return error('Invalid room code', 400);
       }
 
-      const name = (url.searchParams.get('name') || 'Pemain').slice(0, 24);
+      const name = (url.searchParams.get('name') || 'Pemain').trim().slice(0, 14) || 'Pemain';
+      const color = (url.searchParams.get('color') || '#ff5fa2').slice(0, 16);
+      const characterType = (url.searchParams.get('characterType') || 'klasik').slice(0, 24);
       const id = env.ROOM.idFromName(roomCode);
       const stub = env.ROOM.get(id);
 
@@ -46,11 +48,15 @@ export default {
       headers.set('x-role', role);
       headers.set('x-room-code', roomCode);
       headers.set('x-name', name);
+      headers.set('x-color', color);
+      headers.set('x-character-type', characterType);
 
       const forwardUrl = new URL('https://room.internal/ws');
       forwardUrl.searchParams.set('role', role);
       forwardUrl.searchParams.set('room', roomCode);
       forwardUrl.searchParams.set('name', name);
+      forwardUrl.searchParams.set('color', color);
+      forwardUrl.searchParams.set('characterType', characterType);
 
       return stub.fetch(new Request(forwardUrl.toString(), {
         method: request.method,

@@ -49,21 +49,69 @@ const btnPlayAgain = document.getElementById('btn-play-again');
 const arenaSelect = document.getElementById('arena-select');
 const modeSelect = document.getElementById('mode-select');
 const modeStatusEl = document.getElementById('mode-status');
+const lobbyColorWrap = document.getElementById('lobby-colors');
+const lobbyCharacter = document.getElementById('lobby-character');
 
 const REMOTE_COLORS = [0x42a5f5, 0x66bb6a, 0xff7043, 0xab47bc, 0xffca28, 0x26c6da, 0xec407a, 0x8d6e63];
+const PROFILE_KEY = 'pp_profile_v1';
+const PROFILE_COLORS = ['#ff4d4d','#4da6ff','#ffd84d','#4dff88','#b84dff','#ff944d'];
+const PROFILE_TYPES = ['klasik','topi','visor','tanduk'];
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        name: String(p?.name || '').trim().slice(0, 14),
+        color: PROFILE_COLORS.includes(p?.color) ? p.color : PROFILE_COLORS[0],
+        characterType: PROFILE_TYPES.includes(p?.characterType) ? p.characterType : 'klasik',
+      };
+    }
+  } catch (_) {}
+  return { name: '', color: PROFILE_COLORS[0], characterType: 'klasik' };
+}
+function saveProfile(p) { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch (_) {} }
+function applyLobbyProfileUI(profile) {
+  if (lobbyColorWrap) {
+    lobbyColorWrap.querySelectorAll('.lobby-swatch').forEach((b) => {
+      const on = b.dataset.color === profile.color;
+      b.style.borderColor = on ? '#fff' : 'transparent';
+      b.style.transform = on ? 'scale(1.08)' : 'scale(1)';
+    });
+  }
+  if (lobbyCharacter) lobbyCharacter.value = profile.characterType;
+}
 
 function waitForLobby() {
   return new Promise((resolve) => {
+    const profile = loadProfile();
+    if (lobbyName && profile.name) lobbyName.value = profile.name;
+    if (lobbyCharacter) lobbyCharacter.value = profile.characterType;
+    applyLobbyProfileUI(profile);
+    lobbyColorWrap?.querySelectorAll('.lobby-swatch').forEach((b) => {
+      b.addEventListener('click', () => { profile.color = b.dataset.color; applyLobbyProfileUI(profile); saveProfile({ ...profile, name: (lobbyName?.value || '').trim().slice(0,14) }); });
+    });
+    lobbyCharacter?.addEventListener('change', () => { profile.characterType = lobbyCharacter.value; saveProfile({ ...profile, name: (lobbyName?.value || '').trim().slice(0,14) }); });
+    lobbyName?.addEventListener('input', () => { saveProfile({ ...profile, name: (lobbyName?.value || '').trim().slice(0,14) }); });
+
+    function currentProfile() {
+      return {
+        name: (lobbyName?.value || '').trim().slice(0, 14) || 'Pemain',
+        color: PROFILE_COLORS.includes(profile.color) ? profile.color : PROFILE_COLORS[0],
+        characterType: PROFILE_TYPES.includes(lobbyCharacter?.value || profile.characterType) ? (lobbyCharacter?.value || profile.characterType) : 'klasik',
+      };
+    }
     function setMsg(msg, ok = false) { if (lobbyMsg) { lobbyMsg.textContent = msg || ''; lobbyMsg.style.color = ok ? '#9bf6a3' : '#ffb4b4'; } }
     function cleanCode(v) { return (v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); }
     lobbyCode?.addEventListener('input', () => { lobbyCode.value = cleanCode(lobbyCode.value); });
-    btnSolo?.addEventListener('click', () => { resolve({ mode: 'solo', name: (lobbyName?.value || '').trim().slice(0, 24) || 'Pemain' }); }, { once: true });
-    btnHost?.addEventListener('click', () => { resolve({ mode: 'host', name: (lobbyName?.value || '').trim().slice(0, 24) || 'Host' }); }, { once: true });
+    btnSolo?.addEventListener('click', () => { const p = currentProfile(); saveProfile(p); resolve({ mode: 'solo', ...p }); }, { once: true });
+    btnHost?.addEventListener('click', () => { const p = currentProfile(); saveProfile(p); resolve({ mode: 'host', ...p }); }, { once: true });
     btnJoin?.addEventListener('click', () => {
       const code = cleanCode(lobbyCode?.value || '');
       if (lobbyCode) lobbyCode.value = code;
       if (code.length !== 4) { setMsg('Masukkan kode room 4 huruf.'); return; }
-      resolve({ mode: 'join', name: (lobbyName?.value || '').trim().slice(0, 24) || 'Pemain', roomCode: code });
+      const p = currentProfile(); saveProfile(p);
+      resolve({ mode: 'join', ...p, roomCode: code });
     });
   });
 }
@@ -72,6 +120,8 @@ async function bootstrap() {
   if (overlayStatus) overlayStatus.textContent = 'Mabar online - buat atau gabung room';
   const lobby = await waitForLobby();
   const playerName = lobby.name || 'Pemain';
+  const playerColor = lobby.color || '#ff5fa2';
+  const playerCharacterType = lobby.characterType || 'klasik';
   const netMode = lobby.mode; // 'solo' | 'host' | 'join'
   const isOnlineHost = netMode === 'host';
   const isOnlineClient = netMode === 'join';
@@ -332,7 +382,8 @@ async function bootstrap() {
   const player = createPlayer(scene, {
     name: playerName || 'Player',
     spawn: ARENA.spawn.clone(),
-    color: 0xff5fa2,
+    color: playerColor,
+    characterType: playerCharacterType,
     inputEnabled: true,
     onRingOut: handlePlayerRingOut,
     onPunch: () => Audio.playPunch(),
@@ -500,18 +551,20 @@ async function bootstrap() {
     remotes.delete(controllerId);
   }
 
-  function ensureRemotePlayer(controllerId, name) {
+  function ensureRemotePlayer(controllerId, name, color, characterType) {
     let entry = remotes.get(controllerId);
     if (entry) {
-      if (name && entry.player.name !== name) entry.player.name = name;
+      if (name && entry.player.setName) entry.player.setName(name);
+      else if (name && entry.player.name !== name) entry.player.name = name;
       return entry;
     }
-    const color = REMOTE_COLORS[nextRemoteColor % REMOTE_COLORS.length];
+    const fallbackColor = REMOTE_COLORS[nextRemoteColor % REMOTE_COLORS.length];
     nextRemoteColor += 1;
     const rp = createPlayer(scene, {
       name: name || `P${nextRemoteColor}`,
       spawn: randomSpawn(),
-      color,
+      color: color || fallbackColor,
+      characterType: characterType || 'klasik',
       isRemote: true,
       inputEnabled: false,
       onRingOut: handlePlayerRingOut,
@@ -586,6 +639,7 @@ async function bootstrap() {
       id,
       name: p.name,
       color: p.color,
+      characterType: p.characterType || 'klasik',
       x: pos?.x ?? 0, y: pos?.y ?? 0, z: pos?.z ?? 0,
       qx: q?.x ?? 0, qy: q?.y ?? 0, qz: q?.z ?? 0, qw: q?.w ?? 1,
       hp: p.hp, maxHp: p.maxHp, lives: p.lives, score: p.score,
@@ -623,7 +677,7 @@ async function bootstrap() {
       }
       return entry;
     }
-    return ensureRemotePlayer(s.id, s.name);
+    return ensureRemotePlayer(s.id, s.name, s.color, s.characterType);
   }
 
   function applyPlayerState(p, s) {
@@ -643,7 +697,7 @@ async function bootstrap() {
     if (typeof s.eliminated === 'boolean') p.eliminated = s.eliminated;
     if (typeof s.respawning === 'boolean') p.respawning = s.respawning;
     if (typeof s.spawnProtection === 'number') p.spawnProtection = s.spawnProtection;
-    if (s.name) p.name = s.name;
+    if (s.name) { if (p.setName) p.setName(s.name); else p.name = s.name; }
     if (s.team !== undefined) p.team = s.team;
     p.powerUp = s.powerUp || null;
     p.group.visible = !p.eliminated;
@@ -750,17 +804,17 @@ async function bootstrap() {
         if (roomUrlEl) roomUrlEl.textContent = `Koneksi terputus (${s.reason || 'disconnected'}). Coba refresh.`;
       }
     },
-    onPlayerJoined: ({ controllerId, playerId, name, kind }) => {
+    onPlayerJoined: ({ controllerId, playerId, name, kind, color, characterType }) => {
       const id = playerId || controllerId;
       if (!id) return;
-      ensureRemotePlayer(id, name || 'Pemain');
+      ensureRemotePlayer(id, name || 'Pemain', color, characterType);
       if (roomUrlEl && isOnlineHost) roomUrlEl.innerHTML = `Kode room: <b>${network.roomCode || '-'}</b><br><span class="muted">${remotes.size} pemain remote terhubung</span>`;
       refreshPartyUI();
     },
-    onPlayerInput: ({ controllerId, playerId, state, kind }) => {
+    onPlayerInput: ({ controllerId, playerId, state, kind, name, color, characterType }) => {
       const id = playerId || controllerId;
       if (!id) return;
-      if (!remotes.has(id)) ensureRemotePlayer(id, 'Pemain');
+      if (!remotes.has(id)) ensureRemotePlayer(id, name || 'Pemain', color, characterType);
       handleRemoteInput(id, state || {});
     },
     onPlayerLeft: ({ controllerId, playerId }) => {
@@ -783,7 +837,7 @@ async function bootstrap() {
   if (isOnlineHost) {
     network.connect({ mode: 'host' });
   } else if (isOnlineClient) {
-    network.connect({ mode: 'player', roomCode: lobby.roomCode, name: playerName, reconnect: false });
+    network.connect({ mode: 'player', roomCode: lobby.roomCode, name: playerName, color: playerColor, characterType: playerCharacterType, reconnect: false });
   }
 
   // --- Bot controls --------------------------------------------------------
@@ -1071,14 +1125,27 @@ async function bootstrap() {
 
     if (!isOnlineClient) {
       if (!matchOver && !roundOver) {
-        for (const b of bots) b.controller.update(dt);
+        const botGameData = {
+          mode: modeManager?.getMode?.() || 'ffa',
+          hillZone: modeManager?.getHillZone?.() || arena?.hillZone || ARENA.hillZone || null,
+          flags: modeManager?.getFlags?.() || null,
+          players,
+          petasans: petasanManager?.petasans || [],
+        };
+        for (const b of bots) {
+          if (!b?.player || b.player.eliminated) continue;
+          const input = b.controller.update(dt, botGameData);
+          b.player._botInput = input || null;
+          // teruskan input bot ke player (player.update membaca remoteInput)
+          if (input) b.player.setRemoteInput(input);
+        }
       } else {
         for (const b of bots) b.player.setRemoteInput({ moveX:0, moveZ:0, jump:false, punch:false, grabThrow:false, bombHeld:false });
       }
     }
 
     stepPhysics(dt);
-    for (const p of players) p.update(dt, camera);
+    for (const p of players) p.update(dt, camera, p.isBot ? p._botInput : undefined);
 
     pickupManager.update(dt, camera);
 

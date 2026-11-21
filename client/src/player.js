@@ -6,6 +6,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { createRigidBody, createCollider, castRayDown, getWorld } from './physics.js';
 import { ARENA, isRingOut } from './arena.js';
 import { PHYSICS_TUNING } from './tuning.js';
+import { buildCharacterMockup } from './assetsMockup.js';
 
 const MOVE_SPEED = 7;
 const JUMP_VELOCITY = 8.5;
@@ -21,8 +22,10 @@ const THROW_CHARGE_TIME = 0.9;
 export function createPlayer(scene, options = {}) {
   const world = getWorld();
   const spawn = (options.spawn ? options.spawn.clone() : ARENA.spawn.clone());
-  const name = options.name || 'Player';
-  const color = options.color ?? 0xff5fa2;
+  let playerName = String(options.name || 'Player').slice(0, 14) || 'Player';
+  const colorRaw = options.color ?? 0xff5fa2;
+  const color = typeof colorRaw === 'string' ? new THREE.Color(colorRaw).getHex() : (Number(colorRaw) || 0xff5fa2);
+  const characterType = ['klasik', 'topi', 'visor', 'tanduk'].includes(options.characterType) ? options.characterType : 'klasik';
   const isBot = !!options.isBot;
   const isRemote = !!options.isRemote;
   const inputEnabled = options.inputEnabled ?? (!isBot && !isRemote);
@@ -41,7 +44,6 @@ export function createPlayer(scene, options = {}) {
   let punchAnim = 0;
   let isRagdoll = false;
   let powerUp = null; // { type, remaining, duration }
-  const baseHandColor = new THREE.Color(0xffe0bd);
   let lives = 3;
   let score = 0;
   let eliminated = false;
@@ -54,52 +56,21 @@ export function createPlayer(scene, options = {}) {
 
   // --- Visual group --------------------------------------------------------
   const group = new THREE.Group();
-  group.name = name;
+  group.name = playerName;
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.45 });
-  const headMat = new THREE.MeshStandardMaterial({ color: 0xffe0bd, roughness: 0.6 });
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.2 });
-  const handMat = new THREE.MeshStandardMaterial({ color: 0xffe0bd, roughness: 0.6 });
-  const accentMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+  // Visual mockup (collider fisika tetap kapsul di bawah)
+  const colorHex = '#' + new THREE.Color(color).getHexString();
+  const mockup = buildCharacterMockup({ color: colorHex, characterType });
+  group.add(mockup.group);
 
-  const bodyMesh = new THREE.Mesh(new THREE.CapsuleGeometry(capsule.radius, capsule.halfHeight * 2, 6, 12), bodyMat);
-  bodyMesh.castShadow = true;
-  bodyMesh.receiveShadow = true;
-  group.add(bodyMesh);
-
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 16), headMat);
-  head.position.y = totalHalf + 0.28;
-  head.castShadow = true;
-  group.add(head);
-
-  const eyeGeom = new THREE.SphereGeometry(0.045, 8, 8);
-  const eyeL = new THREE.Mesh(eyeGeom, eyeMat);
-  eyeL.position.set(-0.1, 0.04, 0.28);
-  const eyeR = eyeL.clone();
-  eyeR.position.x = 0.1;
-  head.add(eyeL, eyeR);
-
-  const blushGeom = new THREE.SphereGeometry(0.04, 8, 8);
-  const blushMat = new THREE.MeshStandardMaterial({ color: 0xff8ab5, roughness: 0.8 });
-  const blushL = new THREE.Mesh(blushGeom, blushMat);
-  blushL.position.set(-0.18, -0.03, 0.24);
-  const blushR = blushL.clone();
-  blushR.position.x = 0.18;
-  head.add(blushL, blushR);
-
-  const band = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.045, 8, 20), accentMat);
-  band.position.y = 0.2;
-  band.rotation.x = Math.PI / 2;
-  band.castShadow = true;
-  head.add(band);
-
-  const handGeom = new THREE.SphereGeometry(0.16, 12, 12);
-  const handL = new THREE.Mesh(handGeom, handMat);
-  handL.position.set(-capsule.radius - 0.28, 0.15, 0.15);
-  handL.castShadow = true;
-  const handR = handL.clone();
-  handR.position.x = capsule.radius + 0.28;
-  group.add(handL, handR);
+  // Referensi untuk animasi/hit-flash/glow yang sudah ada
+  const bodyMesh = mockup.group.children.find((c) => c.isMesh && c.geometry?.type === 'CapsuleGeometry') || mockup.group.children[0];
+  const bodyMat = bodyMesh?.material;
+  const head = mockup.head;
+  const handL = mockup.leftHand;
+  const handR = mockup.rightHand;
+  const handMat = handL?.material;
+  const baseHandColor = handMat?.color?.clone?.() || new THREE.Color(0xf3c69f);
 
   // --- Health bar ----------------------------------------------------------
   const hpGroup = new THREE.Group();
@@ -149,6 +120,39 @@ export function createPlayer(scene, options = {}) {
   powerLabel.position.z = 0.001;
   powerGroup.add(powerBg, powerLabel);
   group.add(powerGroup);
+
+  // Name tag
+  const nameCanvas = document.createElement('canvas');
+  nameCanvas.width = 256;
+  nameCanvas.height = 64;
+  const nameCtx = nameCanvas.getContext('2d');
+  const nameTex = new THREE.CanvasTexture(nameCanvas);
+  nameTex.colorSpace = THREE.SRGBColorSpace;
+  const nameMat = new THREE.SpriteMaterial({ map: nameTex, transparent: true, depthWrite: false, depthTest: false });
+  const nameSprite = new THREE.Sprite(nameMat);
+  nameSprite.position.set(0, totalHalf + 1.85, 0);
+  nameSprite.scale.set(1.8, 0.45, 1);
+  group.add(nameSprite);
+  function updateNameTag(text) {
+    if (!nameCtx) return;
+    const t = String(text || 'Pemain').slice(0, 14);
+    nameCtx.clearRect(0, 0, nameCanvas.width, nameCanvas.height);
+    nameCtx.fillStyle = 'rgba(0,0,0,0.45)';
+    const pad = 14;
+    nameCtx.font = 'bold 34px system-ui, sans-serif';
+    const w = Math.min(240, nameCtx.measureText(t).width + pad * 2);
+    const x = (256 - w) / 2;
+    nameCtx.beginPath();
+    const r = 12, y = 10, h = 44;
+    nameCtx.moveTo(x + r, y); nameCtx.arcTo(x + w, y, x + w, y + h, r); nameCtx.arcTo(x + w, y + h, x, y + h, r); nameCtx.arcTo(x, y + h, x, y, r); nameCtx.arcTo(x, y, x + w, y, r); nameCtx.closePath();
+    nameCtx.fill();
+    nameCtx.fillStyle = '#ffffff';
+    nameCtx.textAlign = 'center';
+    nameCtx.textBaseline = 'middle';
+    nameCtx.fillText(t, 128, 32);
+    nameTex.needsUpdate = true;
+  }
+  updateNameTag(playerName);
 
   scene.add(group);
 
@@ -772,7 +776,8 @@ export function createPlayer(scene, options = {}) {
     } catch (_) { carriedEntity = null; }
   }
 
-  function update(dt, camera) {
+  function update(dt, camera, inputState = null) {
+    if (inputState && typeof inputState === 'object') setRemoteInput(inputState);
     punchCooldown = Math.max(0, punchCooldown - dt);
     punchAnim = Math.max(0, punchAnim - dt);
     spawnProtection = Math.max(0, spawnProtection - dt);
@@ -921,7 +926,11 @@ export function createPlayer(scene, options = {}) {
 
   const api = {
     isPlayer: true,
-    name,
+    get name() { return playerName; },
+    set name(v) { this.setName(v); },
+    setName(n) { playerName = String(n || 'Pemain').slice(0, 14) || 'Pemain'; group.name = playerName; updateNameTag(playerName); },
+    color,
+    characterType,
     group,
     body,
     collider,

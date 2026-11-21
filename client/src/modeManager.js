@@ -479,6 +479,12 @@ export function createModeManager(scene, options = {}) {
     clearModeObjects();
   }
 
+  function getHillZone() {
+    const arena = getArena();
+    return arena?.hillZone || ARENA.hillZone || null;
+  }
+  function getFlags() { return ctfFlags; }
+
   return {
     setMode,
     getMode,
@@ -495,6 +501,8 @@ export function createModeManager(scene, options = {}) {
     ensureTeams,
     resetTeams,
     getKothScores,
+    getHillZone,
+    getFlags,
     get ctfScores() { return { ...ctfScores }; },
     TEAM_COLORS,
   };

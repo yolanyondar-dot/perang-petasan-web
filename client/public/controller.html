@@ -155,8 +155,24 @@
         <div class="sub">Controller MOBA</div>
         <label for="room-code">Kode Room (4 huruf)</label>
         <input id="room-code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" />
-        <label for="player-name">Nama Pemain (opsional)</label>
-        <input id="player-name" maxlength="24" autocomplete="off" placeholder="Pemain" />
+        <label for="player-name">Nama Pemain</label>
+        <input id="player-name" maxlength="14" autocomplete="off" placeholder="Nama kamu..." />
+        <label>Warna Kostum</label>
+        <div id="color-swatches" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+          <button type="button" class="swatch" data-color="#ff4d4d" style="width:34px;height:34px;border-radius:50%;border:3px solid transparent;background:#ff4d4d;cursor:pointer;"></button>
+          <button type="button" class="swatch" data-color="#4da6ff" style="width:34px;height:34px;border-radius:50%;border:3px solid transparent;background:#4da6ff;cursor:pointer;"></button>
+          <button type="button" class="swatch" data-color="#ffd84d" style="width:34px;height:34px;border-radius:50%;border:3px solid transparent;background:#ffd84d;cursor:pointer;"></button>
+          <button type="button" class="swatch" data-color="#4dff88" style="width:34px;height:34px;border-radius:50%;border:3px solid transparent;background:#4dff88;cursor:pointer;"></button>
+          <button type="button" class="swatch" data-color="#b84dff" style="width:34px;height:34px;border-radius:50%;border:3px solid transparent;background:#b84dff;cursor:pointer;"></button>
+          <button type="button" class="swatch" data-color="#ff944d" style="width:34px;height:34px;border-radius:50%;border:3px solid transparent;background:#ff944d;cursor:pointer;"></button>
+        </div>
+        <label>Tipe Karakter</label>
+        <div id="type-choices" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+          <button type="button" class="type-btn" data-type="klasik" style="flex:1;min-width:80px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">Klasik</button>
+          <button type="button" class="type-btn" data-type="topi" style="flex:1;min-width:80px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">Topi</button>
+          <button type="button" class="type-btn" data-type="visor" style="flex:1;min-width:80px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">Visor</button>
+          <button type="button" class="type-btn" data-type="tanduk" style="flex:1;min-width:80px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;">Tanduk</button>
+        </div>
         <button id="join-btn" class="join-btn">Gabung</button>
         <div id="join-status"></div>
       </div>
@@ -229,6 +245,37 @@
         const nameLabel = document.getElementById('name-label');
         const netLabel = document.getElementById('net-label');
         const orientOverlay = document.getElementById('orientation-overlay');
+        const swatches = [...document.querySelectorAll('.swatch')];
+        const typeBtns = [...document.querySelectorAll('.type-btn')];
+        const PROFILE_KEY = 'pp_controller_profile';
+        const COLORS = ['#ff4d4d','#4da6ff','#ffd84d','#4dff88','#b84dff','#ff944d'];
+        const TYPES = ['klasik','topi','visor','tanduk'];
+        let selectedColor = COLORS[0];
+        let selectedType = 'klasik';
+
+        function saveProfile() {
+          try { localStorage.setItem(PROFILE_KEY, JSON.stringify({ name: nameInput.value.trim().slice(0,14), color: selectedColor, characterType: selectedType })); } catch (_) {}
+        }
+        function applyProfileUI() {
+          swatches.forEach((b) => { const on = b.dataset.color === selectedColor; b.style.borderColor = on ? '#fff' : 'transparent'; b.style.transform = on ? 'scale(1.08)' : 'scale(1)'; });
+          typeBtns.forEach((b) => { const on = b.dataset.type === selectedType; b.style.background = on ? '#ffd54f' : 'rgba(255,255,255,.08)'; b.style.color = on ? '#111' : '#fff'; b.style.fontWeight = on ? '800' : '500'; });
+        }
+        function loadProfile() {
+          try {
+            const raw = localStorage.getItem(PROFILE_KEY);
+            if (raw) {
+              const p = JSON.parse(raw);
+              if (p?.name) nameInput.value = String(p.name).slice(0,14);
+              if (COLORS.includes(p?.color)) selectedColor = p.color;
+              if (TYPES.includes(p?.characterType)) selectedType = p.characterType;
+            }
+          } catch (_) {}
+          applyProfileUI();
+        }
+        swatches.forEach((b) => b.addEventListener('click', () => { selectedColor = b.dataset.color; applyProfileUI(); saveProfile(); }));
+        typeBtns.forEach((b) => b.addEventListener('click', () => { selectedType = b.dataset.type; applyProfileUI(); saveProfile(); }));
+        nameInput.addEventListener('input', saveProfile);
+        loadProfile();
 
         const state = { moveX: 0, moveZ: 0, jump: false, punch: false, grabThrow: false, bombHeld: false };
         let ws = null;
@@ -288,15 +335,16 @@
 
         function connectAndJoin() {
           const roomCode = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
-          const name = nameInput.value.trim().slice(0, 24);
+          const name = nameInput.value.trim().slice(0, 14) || 'Pemain';
           roomInput.value = roomCode;
           if (roomCode.length !== 4) { setStatus('Masukkan kode room 4 huruf.'); return; }
+          saveProfile();
 
           setStatus('Menghubungkan...', true);
           joinBtn.disabled = true;
           try { ws?.close(); } catch (_) {}
           const base = getWsBase();
-          const url = `${base}/ws?role=controller&room=${encodeURIComponent(roomCode)}&name=${encodeURIComponent(name)}`;
+          const url = `${base}/ws?role=controller&room=${encodeURIComponent(roomCode)}&name=${encodeURIComponent(name)}&color=${encodeURIComponent(selectedColor)}&characterType=${encodeURIComponent(selectedType)}`;
           ws = new WebSocket(url);
 
           ws.addEventListener('open', () => { setStatus('Terhubung, menunggu konfirmasi...', true); });

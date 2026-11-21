@@ -5,11 +5,15 @@ type Role = 'host' | 'controller' | 'player';
 interface ControllerInfo {
   ws: WebSocket;
   name: string;
+  color: string;
+  characterType: string;
 }
 
 interface PlayerInfo {
   ws: WebSocket;
   name: string;
+  color: string;
+  characterType: string;
 }
 
 const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -45,7 +49,9 @@ export class FightRoom implements DurableObject {
 
     const role = (request.headers.get('x-role') || url.searchParams.get('role') || '') as Role;
     const roomCode = (request.headers.get('x-room-code') || url.searchParams.get('room') || '').toUpperCase();
-    const name = (request.headers.get('x-name') || url.searchParams.get('name') || 'Pemain').slice(0, 24);
+    const name = (request.headers.get('x-name') || url.searchParams.get('name') || 'Pemain').trim().slice(0, 14) || 'Pemain';
+    const color = (request.headers.get('x-color') || url.searchParams.get('color') || '#ff5fa2').slice(0, 16);
+    const characterType = (request.headers.get('x-character-type') || url.searchParams.get('characterType') || 'klasik').slice(0, 24);
 
     if (role !== 'host' && role !== 'controller' && role !== 'player') return error('Invalid role', 400);
     if (!roomCode) return error('Missing room code', 400);
@@ -58,9 +64,9 @@ export class FightRoom implements DurableObject {
     if (role === 'host') {
       this.attachHost(server, roomCode);
     } else if (role === 'controller') {
-      this.attachController(server, roomCode, name);
+      this.attachController(server, roomCode, name, color, characterType);
     } else {
-      this.attachPlayer(server, roomCode, name);
+      this.attachPlayer(server, roomCode, name, color, characterType);
     }
 
     return new Response(null, { status: 101, webSocket: client });
@@ -122,7 +128,7 @@ export class FightRoom implements DurableObject {
     ws.addEventListener('error', () => { if (this.host === ws) this.host = null; });
   }
 
-  private attachController(ws: WebSocket, roomCode: string, name: string) {
+  private attachController(ws: WebSocket, roomCode: string, name: string, color = '#ff5fa2', characterType = 'klasik') {
     if (!this.host) {
       this.safeSend(ws, { type: 'join-error', ok: false, message: `Kode room "${roomCode}" tidak ditemukan.` });
       try { ws.close(1008, 'room not found'); } catch (_) {}
@@ -130,9 +136,9 @@ export class FightRoom implements DurableObject {
     }
 
     const controllerId = makeId();
-    this.controllers.set(controllerId, { ws, name });
-    this.safeSend(ws, { type: 'joined-room', ok: true, roomCode, controllerId, name });
-    this.safeSend(this.host, { type: 'player-joined', roomCode, controllerId, name, kind: 'controller' });
+    this.controllers.set(controllerId, { ws, name, color, characterType });
+    this.safeSend(ws, { type: 'joined-room', ok: true, roomCode, controllerId, name, color, characterType });
+    this.safeSend(this.host, { type: 'player-joined', roomCode, controllerId, name, color, characterType, kind: 'controller' });
 
     ws.addEventListener('message', (evt) => {
       let data: any;
@@ -165,7 +171,7 @@ export class FightRoom implements DurableObject {
     ws.addEventListener('error', () => cleanup('error'));
   }
 
-  private attachPlayer(ws: WebSocket, roomCode: string, name: string) {
+  private attachPlayer(ws: WebSocket, roomCode: string, name: string, color = '#ff5fa2', characterType = 'klasik') {
     if (!this.host) {
       this.safeSend(ws, { type: 'join-error', ok: false, message: `Kode room "${roomCode}" tidak ditemukan.` });
       try { ws.close(1008, 'room not found'); } catch (_) {}
@@ -173,9 +179,9 @@ export class FightRoom implements DurableObject {
     }
 
     const playerId = makeId();
-    this.players.set(playerId, { ws, name });
-    this.safeSend(ws, { type: 'joined-room', ok: true, roomCode, playerId, name, kind: 'player' });
-    this.safeSend(this.host, { type: 'player-joined', roomCode, playerId, name, kind: 'player' });
+    this.players.set(playerId, { ws, name, color, characterType });
+    this.safeSend(ws, { type: 'joined-room', ok: true, roomCode, playerId, name, color, characterType, kind: 'player' });
+    this.safeSend(this.host, { type: 'player-joined', roomCode, playerId, name, color, characterType, kind: 'player' });
 
     ws.addEventListener('message', (evt) => {
       let data: any;

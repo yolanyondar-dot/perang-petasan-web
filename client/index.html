@@ -250,7 +250,29 @@
 
         <div id="lobby-main">
           <label style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Nama Pemain</label>
-          <input id="lobby-name" maxlength="24" placeholder="Pemain" style="width:100%;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:16px;margin-bottom:14px;" />
+          <input id="lobby-name" maxlength="14" placeholder="Nama kamu..." style="width:100%;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:16px;margin-bottom:10px;" />
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+            <div>
+              <div style="font-size:13px;opacity:.85;margin-bottom:6px;">Warna Kostum</div>
+              <div id="lobby-colors" style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button type="button" class="lobby-swatch" data-color="#ff4d4d" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#ff4d4d;cursor:pointer;"></button>
+                <button type="button" class="lobby-swatch" data-color="#4da6ff" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#4da6ff;cursor:pointer;"></button>
+                <button type="button" class="lobby-swatch" data-color="#ffd84d" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#ffd84d;cursor:pointer;"></button>
+                <button type="button" class="lobby-swatch" data-color="#4dff88" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#4dff88;cursor:pointer;"></button>
+                <button type="button" class="lobby-swatch" data-color="#b84dff" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#b84dff;cursor:pointer;"></button>
+                <button type="button" class="lobby-swatch" data-color="#ff944d" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#ff944d;cursor:pointer;"></button>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:13px;opacity:.85;margin-bottom:6px;">Tipe Karakter</div>
+              <select id="lobby-character" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:14px;">
+                <option value="klasik">Klasik</option>
+                <option value="topi">Topi</option>
+                <option value="visor">Visor</option>
+                <option value="tanduk">Tanduk</option>
+              </select>
+            </div>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
             <div>
               <label for="arena-select" style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Arena</label>

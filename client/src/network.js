@@ -29,6 +29,8 @@ export function createNetwork(handlers = {}) {
   let mode = 'host'; // 'host' | 'player'
   let joinCode = '';
   let joinName = '';
+  let joinColor = '#ff5fa2';
+  let joinCharacterType = 'klasik';
 
   function emitRoomCreated(code) {
     roomCode = code;
@@ -49,7 +51,7 @@ export function createNetwork(handlers = {}) {
 
   function buildUrl() {
     if (mode === 'player') {
-      return `${wsBase}/ws?role=player&room=${encodeURIComponent(joinCode)}&name=${encodeURIComponent(joinName)}`;
+      return `${wsBase}/ws?role=player&room=${encodeURIComponent(joinCode)}&name=${encodeURIComponent(joinName)}&color=${encodeURIComponent(joinColor)}&characterType=${encodeURIComponent(joinCharacterType)}`;
     }
     return `${wsBase}/ws?role=host`;
   }
@@ -57,7 +59,9 @@ export function createNetwork(handlers = {}) {
   function connect(opts = {}) {
     if (opts.mode) mode = opts.mode;
     if (opts.roomCode) joinCode = String(opts.roomCode).toUpperCase().slice(0, 4);
-    if (opts.name) joinName = String(opts.name).slice(0, 24);
+    if (opts.name) joinName = String(opts.name).slice(0, 14);
+    if (opts.color) joinColor = String(opts.color).slice(0, 16);
+    if (opts.characterType) joinCharacterType = String(opts.characterType).slice(0, 24);
     if (opts.reconnect === false) shouldReconnect = false;
 
     clearReconnect();

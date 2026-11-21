@@ -87,7 +87,9 @@ io.on('connection', (socket) => {
   socket.on('join-room', (payload = {}, ack) => {
     const rawCode = String(payload.roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const roomCode = rawCode.slice(0, 4);
-    const name = String(payload.name || '').trim().slice(0, 24) || 'Pemain';
+    const name = String(payload.name || '').trim().slice(0, 14) || 'Pemain';
+    const color = String(payload.color || '#ff5fa2').slice(0, 16);
+    const characterType = String(payload.characterType || 'klasik').slice(0, 24);
     const room = rooms.get(roomCode);
     if (!room) {
       const err = { ok: false, message: `Kode room "${roomCode || '-'}" tidak ditemukan.` };
@@ -97,11 +99,11 @@ io.on('connection', (socket) => {
     }
 
     const controllerId = socket.id;
-    room.controllers.set(controllerId, { socketId: socket.id, name });
+    room.controllers.set(controllerId, { socketId: socket.id, name, color, characterType });
     socketMeta.set(socket.id, { role: 'controller', roomCode, controllerId });
     socket.join(`room:${roomCode}:controllers`);
 
-    const joinedPayload = { ok: true, roomCode, controllerId, name };
+    const joinedPayload = { ok: true, roomCode, controllerId, name, color, characterType };
     socket.emit('joined-room', joinedPayload);
     ack?.(joinedPayload);
 
@@ -109,6 +111,8 @@ io.on('connection', (socket) => {
       roomCode,
       controllerId,
       name,
+      color,
+      characterType,
     });
     console.log(`[room] ${name} (${controllerId}) joined ${roomCode}`);
   });
