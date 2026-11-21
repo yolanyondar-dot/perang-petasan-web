@@ -6,8 +6,6 @@ function getWsUrl() {
     if (u.startsWith('ws://') || u.startsWith('wss://')) return u;
     return u.replace(/^http/, 'ws');
   }
-  // Dev: Vite on 5173, node server on 3001 (Socket.IO path not used here, but WS server may differ).
-  // For Cloudflare/production same-origin, use current host.
   if (location.port === '5173' || location.port === '5174') {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${location.hostname}:3001`;
@@ -28,6 +26,9 @@ export function createNetwork(handlers = {}) {
   let shouldReconnect = true;
   let reconnectTimer = null;
   let reconnectAttempts = 0;
+  let mode = 'host'; // 'host' | 'player'
+  let joinCode = '';
+  let joinName = '';
 
   function emitRoomCreated(code) {
     roomCode = code;
@@ -46,16 +47,28 @@ export function createNetwork(handlers = {}) {
     reconnectTimer = setTimeout(() => connect(), delay);
   }
 
-  function connect() {
+  function buildUrl() {
+    if (mode === 'player') {
+      return `${wsBase}/ws?role=player&room=${encodeURIComponent(joinCode)}&name=${encodeURIComponent(joinName)}`;
+    }
+    return `${wsBase}/ws?role=host`;
+  }
+
+  function connect(opts = {}) {
+    if (opts.mode) mode = opts.mode;
+    if (opts.roomCode) joinCode = String(opts.roomCode).toUpperCase().slice(0, 4);
+    if (opts.name) joinName = String(opts.name).slice(0, 24);
+    if (opts.reconnect === false) shouldReconnect = false;
+
     clearReconnect();
     try { ws?.close(); } catch (_) {}
-    const url = `${wsBase}/ws?role=host`;
+    const url = buildUrl();
     ws = new WebSocket(url);
 
     ws.addEventListener('open', () => {
       connected = true;
       reconnectAttempts = 0;
-      handlers.onStatus?.({ connected: true, serverUrl: wsBase });
+      handlers.onStatus?.({ connected: true, serverUrl: wsBase, mode });
     });
 
     ws.addEventListener('message', (evt) => {
@@ -66,6 +79,13 @@ export function createNetwork(handlers = {}) {
         case 'room-created':
           if (msg.roomCode) emitRoomCreated(msg.roomCode);
           break;
+        case 'joined-room':
+          roomCode = msg.roomCode || roomCode;
+          handlers.onJoinedRoom?.(msg);
+          break;
+        case 'join-error':
+          handlers.onJoinError?.(msg);
+          break;
         case 'player-joined':
           handlers.onPlayerJoined?.(msg);
           break;
@@ -75,31 +95,45 @@ export function createNetwork(handlers = {}) {
         case 'player-left':
           handlers.onPlayerLeft?.(msg);
           break;
+        case 'room-closed':
+          handlers.onRoomClosed?.(msg);
+          break;
+        case 'game-state':
+          handlers.onGameState?.(msg);
+          break;
+        case 'host-event':
+          handlers.onHostEvent?.(msg);
+          break;
         default:
           break;
       }
     });
 
     ws.addEventListener('close', (evt) => {
-      const wasConnected = connected;
       connected = false;
-      handlers.onStatus?.({ connected: false, reason: evt.reason || `close:${evt.code}`, serverUrl: wsBase });
+      handlers.onStatus?.({ connected: false, reason: evt.reason || `close:${evt.code}`, serverUrl: wsBase, mode });
       if (shouldReconnect) scheduleReconnect();
     });
 
     ws.addEventListener('error', () => {
-      handlers.onStatus?.({ connected: false, error: 'WebSocket error', serverUrl: wsBase });
+      handlers.onStatus?.({ connected: false, error: 'WebSocket error', serverUrl: wsBase, mode });
     });
 
     return ws;
   }
 
+  function send(msg) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  }
+
   return {
     connect,
+    send,
     get socket() { return ws; },
     get roomCode() { return roomCode; },
     get connected() { return connected; },
     get serverUrl() { return wsBase; },
+    get mode() { return mode; },
     getControllerUrl,
   };
 }

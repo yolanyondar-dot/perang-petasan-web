@@ -16,6 +16,13 @@ import { PHYSICS_TUNING, TUNING_DEFAULTS, resetTuning, applyTuning } from './tun
 
 const app = document.getElementById('app');
 const overlay = document.getElementById('overlay');
+const overlayStatus = document.getElementById('overlay-status');
+const lobbyName = document.getElementById('lobby-name');
+const lobbyCode = document.getElementById('lobby-code');
+const lobbyMsg = document.getElementById('lobby-msg');
+const btnHost = document.getElementById('btn-host');
+const btnJoin = document.getElementById('btn-join');
+const btnSolo = document.getElementById('btn-solo');
 const hudStats = document.getElementById('hud-stats');
 const roomCodeEl = document.getElementById('room-code');
 const roomUrlEl = document.getElementById('room-url');
@@ -38,7 +45,33 @@ const modeStatusEl = document.getElementById('mode-status');
 
 const REMOTE_COLORS = [0x42a5f5, 0x66bb6a, 0xff7043, 0xab47bc, 0xffca28, 0x26c6da, 0xec407a, 0x8d6e63];
 
+function waitForLobby() {
+  return new Promise((resolve) => {
+    function setMsg(msg, ok = false) { if (lobbyMsg) { lobbyMsg.textContent = msg || ''; lobbyMsg.style.color = ok ? '#9bf6a3' : '#ffb4b4'; } }
+    function cleanCode(v) { return (v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); }
+    lobbyCode?.addEventListener('input', () => { lobbyCode.value = cleanCode(lobbyCode.value); });
+    btnSolo?.addEventListener('click', () => { resolve({ mode: 'solo', name: (lobbyName?.value || '').trim().slice(0, 24) || 'Pemain' }); }, { once: true });
+    btnHost?.addEventListener('click', () => { resolve({ mode: 'host', name: (lobbyName?.value || '').trim().slice(0, 24) || 'Host' }); }, { once: true });
+    btnJoin?.addEventListener('click', () => {
+      const code = cleanCode(lobbyCode?.value || '');
+      if (lobbyCode) lobbyCode.value = code;
+      if (code.length !== 4) { setMsg('Masukkan kode room 4 huruf.'); return; }
+      resolve({ mode: 'join', name: (lobbyName?.value || '').trim().slice(0, 24) || 'Pemain', roomCode: code });
+    });
+  });
+}
+
 async function bootstrap() {
+  if (overlayStatus) overlayStatus.textContent = 'Mabar online - buat atau gabung room';
+  const lobby = await waitForLobby();
+  const playerName = lobby.name || 'Pemain';
+  const netMode = lobby.mode; // 'solo' | 'host' | 'join'
+  const isOnlineHost = netMode === 'host';
+  const isOnlineClient = netMode === 'join';
+  let localPlayerId = isOnlineClient ? null : 'host';
+  let hostStateTimer = 0;
+  if (overlayStatus) overlayStatus.textContent = 'Memuat fisika & arena…';
+  if (lobbyMsg) lobbyMsg.textContent = '';
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -290,7 +323,7 @@ async function bootstrap() {
   btnPlayAgain?.addEventListener('click', () => { Audio.unlockAudio(); resetMatch(); });
 
   const player = createPlayer(scene, {
-    name: 'Player',
+    name: playerName || 'Player',
     spawn: ARENA.spawn.clone(),
     color: 0xff5fa2,
     inputEnabled: true,
@@ -434,8 +467,10 @@ async function bootstrap() {
   }
 
   // Tambah 2 bot awal agar arena tidak sepi
-  addBot('Dummy');
-  addBot('Rival');
+  if (!isOnlineClient) {
+    addBot('Dummy');
+    addBot('Rival');
+  }
 
   // --- Remote/mobile players -----------------------------------------------
   /** @type {Map<string, {player:any, prev:any, throwCooldown:number, colorIndex:number}>} */
@@ -525,32 +560,167 @@ async function bootstrap() {
     entry.prev = now;
   }
 
+  function serializePlayer(p, id) {
+    const pos = p.group?.position || p.position;
+    const q = p.group?.quaternion;
+    return {
+      id,
+      name: p.name,
+      color: p.color,
+      x: pos?.x ?? 0, y: pos?.y ?? 0, z: pos?.z ?? 0,
+      qx: q?.x ?? 0, qy: q?.y ?? 0, qz: q?.z ?? 0, qw: q?.w ?? 1,
+      hp: p.hp, maxHp: p.maxHp, lives: p.lives, score: p.score,
+      knockout: p.knockoutTimer || 0, stagger: p.stagger || 0,
+      eliminated: !!p.eliminated, respawning: !!p.respawning,
+      spawnProtection: p.spawnProtection || 0,
+      team: p.team || null,
+      powerUp: p.powerUp ? { type: p.powerUp.type, remaining: p.powerUp.remaining } : null,
+      holding: !!p.heldPetasan, carrying: !!p.carriedEntity,
+    };
+  }
+
+  function buildHostState() {
+    const arr = [serializePlayer(player, 'host')];
+    for (const [id, entry] of remotes.entries()) arr.push(serializePlayer(entry.player, id));
+    for (let i = 0; i < bots.length; i++) arr.push(serializePlayer(bots[i].player, `bot:${i}`));
+    return {
+      players: arr,
+      round: roundIndex, matchOver, roundOver, mode: modeManager?.mode, arena: currentArenaType,
+    };
+  }
+
+  function ensureRemoteFromState(s) {
+    if (!s?.id || s.id === localPlayerId) return null;
+    if (String(s.id).startsWith('bot:')) {
+      // bots are host-controlled; on client just create/update remote-like representation
+      let entry = remotes.get(s.id);
+      if (!entry) {
+        const rp = createPlayer(scene, { name: s.name || 'Bot', spawn: new THREE.Vector3(s.x, s.y, s.z), color: s.color || 0x888888, isBot: true, inputEnabled: false, onRingOut: () => {}, onPunch: () => {}, onThrow: () => {}, onFuse: () => {} });
+        rp.setPetasanManager(petasanManager);
+        players.push(rp);
+        entry = { player: rp, prev: { jump: false, punch: false, grabThrow: false, bombHeld: false }, throwCooldown: 0, isNetBot: true };
+        remotes.set(s.id, entry);
+      }
+      return entry;
+    }
+    return ensureRemotePlayer(s.id, s.name);
+  }
+
+  function applyPlayerState(p, s) {
+    if (!p || !s) return;
+    try { p.body.setTranslation({ x: s.x, y: s.y, z: s.z }, true); } catch (_) {}
+    try { p.body.setLinvel({ x: 0, y: 0, z: 0 }, true); } catch (_) {}
+    if (p.group) {
+      p.group.position.set(s.x, s.y, s.z);
+      if (s.qw !== undefined) p.group.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+    }
+    if (typeof s.hp === 'number') p.hp = s.hp;
+    if (typeof s.maxHp === 'number') p.maxHp = s.maxHp;
+    if (typeof s.lives === 'number') p.lives = s.lives;
+    if (typeof s.score === 'number') p.score = s.score;
+    if (typeof s.knockout === 'number') p.knockoutTimer = s.knockout;
+    if (typeof s.stagger === 'number') p.stagger = s.stagger;
+    if (typeof s.eliminated === 'boolean') p.eliminated = s.eliminated;
+    if (typeof s.respawning === 'boolean') p.respawning = s.respawning;
+    if (typeof s.spawnProtection === 'number') p.spawnProtection = s.spawnProtection;
+    if (s.name) p.name = s.name;
+    if (s.team !== undefined) p.team = s.team;
+    p.powerUp = s.powerUp || null;
+    p.group.visible = !p.eliminated;
+  }
+
+  function applyHostState(state) {
+    if (!state || !Array.isArray(state.players)) return;
+    const seen = new Set();
+    for (const s of state.players) {
+      if (!s?.id) continue;
+      seen.add(s.id);
+      if (s.id === localPlayerId) {
+        // apply authoritative correction to own player softly? for now direct
+        if (isOnlineClient) applyPlayerState(player, s);
+        continue;
+      }
+      const entry = ensureRemoteFromState(s);
+      if (entry) applyPlayerState(entry.player, s);
+    }
+    // remove remotes not in state (except none) - be careful not to remove local
+    if (isOnlineClient) {
+      for (const [id, entry] of [...remotes.entries()]) {
+        if (!seen.has(id)) { removeRemote(id); }
+      }
+      if (typeof state.round === 'number') roundIndex = state.round;
+      if (typeof state.matchOver === 'boolean') matchOver = state.matchOver;
+      if (typeof state.roundOver === 'boolean') roundOver = state.roundOver;
+      updateRoundHud();
+      updateModeHud();
+    }
+  }
+
   // --- Network -------------------------------------------------------------
   const network = createNetwork({
     onRoomCreated: ({ roomCode, controllerUrl }) => {
       if (roomCodeEl) roomCodeEl.textContent = roomCode;
       if (roomUrlEl) {
-        const hostHint = location.hostname || 'localhost';
-        roomUrlEl.innerHTML = `Buka <b>${controllerUrl}</b> di HP (Wi-Fi sama)<br><span class="muted">Server: ${network.serverUrl}</span>`;
+        roomUrlEl.innerHTML = `Kode room: <b>${roomCode}</b><br>Buka <b>${controllerUrl}</b> di HP (Wi-Fi sama)<br><span class="muted">Mode: online host</span>`;
+      }
+    },
+    onJoinedRoom: (msg) => {
+      if (isOnlineClient) {
+        localPlayerId = msg.playerId || msg.controllerId || localPlayerId;
+        if (roomCodeEl) roomCodeEl.textContent = msg.roomCode || lobby.roomCode || '-';
+        if (roomUrlEl) roomUrlEl.innerHTML = `Terhubung ke room <b>${msg.roomCode || lobby.roomCode}</b><br><span class="muted">Mode: online player</span>`;
+        if (overlayStatus) overlayStatus.textContent = 'Terhubung! Memuat arena...';
+        overlay?.classList.add('hidden');
+      }
+    },
+    onJoinError: (msg) => {
+      if (isOnlineClient) {
+        if (overlayStatus) overlayStatus.textContent = 'Gagal gabung room';
+        if (lobbyMsg) { lobbyMsg.textContent = msg?.message || 'Gagal bergabung ke room.'; lobbyMsg.style.color = '#ffb4b4'; }
+        overlay?.classList.remove('hidden');
       }
     },
     onStatus: (s) => {
-      if (!s.connected && roomUrlEl && !network.roomCode) {
-        roomUrlEl.textContent = `Server belum terhubung (${s.error || s.reason || network.serverUrl}). Jalankan server: npm run server`;
+      if (!s.connected && roomUrlEl && !network.roomCode && !isOnlineClient) {
+        roomUrlEl.textContent = `Server belum terhubung (${s.error || s.reason || network.serverUrl}).`;
+      }
+      if (isOnlineClient && !s.connected && localPlayerId) {
+        if (roomUrlEl) roomUrlEl.textContent = `Koneksi terputus (${s.reason || 'disconnected'}). Coba refresh.`;
       }
     },
-    onPlayerJoined: ({ controllerId, name }) => {
-      ensureRemotePlayer(controllerId, name);
+    onPlayerJoined: ({ controllerId, playerId, name, kind }) => {
+      const id = playerId || controllerId;
+      if (!id) return;
+      ensureRemotePlayer(id, name || 'Pemain');
+      if (roomUrlEl && isOnlineHost) roomUrlEl.innerHTML = `Kode room: <b>${network.roomCode || '-'}</b><br><span class="muted">${remotes.size} pemain remote terhubung</span>`;
     },
-    onPlayerInput: ({ controllerId, state }) => {
-      if (!remotes.has(controllerId)) ensureRemotePlayer(controllerId, 'Pemain');
-      handleRemoteInput(controllerId, state || {});
+    onPlayerInput: ({ controllerId, playerId, state, kind }) => {
+      const id = playerId || controllerId;
+      if (!id) return;
+      if (!remotes.has(id)) ensureRemotePlayer(id, 'Pemain');
+      handleRemoteInput(id, state || {});
     },
-    onPlayerLeft: ({ controllerId }) => {
-      removeRemote(controllerId);
+    onPlayerLeft: ({ controllerId, playerId }) => {
+      const id = playerId || controllerId;
+      if (id) removeRemote(id);
+    },
+    onRoomClosed: () => {
+      if (isOnlineClient) {
+        if (roomUrlEl) roomUrlEl.textContent = 'Room ditutup host.';
+        if (overlayStatus) overlayStatus.textContent = 'Room ditutup host.';
+        overlay?.classList.remove('hidden');
+      }
+    },
+    onGameState: (msg) => {
+      if (isOnlineClient) applyHostState(msg?.state);
     },
   });
-  network.connect();
+
+  if (isOnlineHost) {
+    network.connect({ mode: 'host' });
+  } else if (isOnlineClient) {
+    network.connect({ mode: 'player', roomCode: lobby.roomCode, name: playerName, reconnect: false });
+  }
 
   // --- Bot controls --------------------------------------------------------
   btnAddBot?.addEventListener('click', () => addBot());
@@ -629,6 +799,21 @@ async function bootstrap() {
   // --- Local input (keyboard + mouse) --------------------------------------
   let throwCooldown = 0;
   const THROW_COOLDOWN = 0.45;
+  const keyState = new Set();
+  let mouseBomb = false;
+  let mousePunch = false;
+  window.addEventListener('keydown', (e) => keyState.add(e.code));
+  window.addEventListener('keyup', (e) => keyState.delete(e.code));
+  function getLocalInputState() {
+    return {
+      moveX: (keyState.has('KeyD') || keyState.has('ArrowRight') ? 1 : 0) - (keyState.has('KeyA') || keyState.has('ArrowLeft') ? 1 : 0),
+      moveZ: (keyState.has('KeyW') || keyState.has('ArrowUp') ? 1 : 0) - (keyState.has('KeyS') || keyState.has('ArrowDown') ? 1 : 0),
+      jump: keyState.has('Space'),
+      punch: keyState.has('KeyF') || mousePunch,
+      grabThrow: keyState.has('KeyQ') || keyState.has('ShiftLeft') || keyState.has('ShiftRight'),
+      bombHeld: keyState.has('KeyE') || mouseBomb,
+    };
+  }
 
   function trySpawnAndHold() {
     if (throwCooldown > 0 || matchOver || roundOver || player.eliminated) return;
@@ -648,12 +833,12 @@ async function bootstrap() {
   }
 
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyE') { e.preventDefault(); if (!e.repeat) trySpawnAndHold(); }
-    if (e.code === 'KeyF') { e.preventDefault(); if (!e.repeat && !matchOver && !roundOver && !player.eliminated) player.punch(players); }
-    if (e.code === 'KeyQ' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') { e.preventDefault(); if (!e.repeat && !matchOver && !roundOver && !player.eliminated) player.toggleCarryOrThrow(players, petasanManager.petasans); }
+    if (e.code === 'KeyE') { e.preventDefault(); if (!e.repeat && !isOnlineClient) trySpawnAndHold(); }
+    if (e.code === 'KeyF') { e.preventDefault(); if (!e.repeat && !isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.punch(players); }
+    if (e.code === 'KeyQ' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') { e.preventDefault(); if (!e.repeat && !isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.toggleCarryOrThrow(players, petasanManager.petasans); }
   });
   window.addEventListener('keyup', (e) => {
-    if (e.code === 'KeyE') { e.preventDefault(); tryThrowHeld(); }
+    if (e.code === 'KeyE') { e.preventDefault(); if (!isOnlineClient) tryThrowHeld(); }
   });
 
   const canvas = renderer.domElement;
@@ -661,11 +846,17 @@ async function bootstrap() {
   canvas.addEventListener('pointerdown', (e) => {
     if (e.target !== canvas) return;
     canvas.setPointerCapture?.(e.pointerId);
-    if (e.button === 0) trySpawnAndHold();
-    else if (e.button === 2 && !matchOver && !roundOver && !player.eliminated) player.punch(players);
+    if (e.button === 0) { mouseBomb = true; if (!isOnlineClient) trySpawnAndHold(); }
+    else if (e.button === 2) { mousePunch = true; if (!isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.punch(players); }
   });
-  canvas.addEventListener('pointerup', (e) => { if (e.button === 0) tryThrowHeld(); });
-  window.addEventListener('pointerup', (e) => { if (e.button === 0 && e.target !== canvas) tryThrowHeld(); });
+  canvas.addEventListener('pointerup', (e) => {
+    if (e.button === 0) { mouseBomb = false; if (!isOnlineClient) tryThrowHeld(); }
+    if (e.button === 2) { mousePunch = false; }
+  });
+  window.addEventListener('pointerup', (e) => {
+    if (e.button === 0) { mouseBomb = false; if (e.target !== canvas && !isOnlineClient) tryThrowHeld(); }
+    if (e.button === 2) { mousePunch = false; }
+  });
 
   // --- Resize --------------------------------------------------------------
   window.addEventListener('resize', () => {
@@ -681,9 +872,14 @@ async function bootstrap() {
   const desiredCameraPos = new THREE.Vector3();
   const desiredLookAt = new THREE.Vector3();
   const currentLookAt = new THREE.Vector3().copy(ARENA.spawn).add(lookAtOffset);
-  overlay?.classList.add('hidden');
+  if (isOnlineClient) {
+    if (overlayStatus) overlayStatus.textContent = `Menghubungkan ke room ${lobby.roomCode}...`;
+    overlay?.classList.remove('hidden');
+  } else {
+    overlay?.classList.add('hidden');
+    showRoundBanner('Ronde 1', 'Siap bertarung!', 1500);
+  }
   updateRoundHud();
-  showRoundBanner('Ronde 1', 'Siap bertarung!', 1500);
 
   function frame() {
     requestAnimationFrame(frame);
@@ -692,10 +888,16 @@ async function bootstrap() {
     throwCooldown = Math.max(0, throwCooldown - dt);
     for (const entry of remotes.values()) entry.throwCooldown = Math.max(0, entry.throwCooldown - dt);
 
-    if (!matchOver && !roundOver) {
-      for (const b of bots) b.controller.update(dt);
-    } else {
-      for (const b of bots) b.player.setRemoteInput({ moveX:0, moveZ:0, jump:false, punch:false, grabThrow:false, bombHeld:false });
+    if (isOnlineClient && network.connected) {
+      network.send({ type: 'player-input', state: getLocalInputState() });
+    }
+
+    if (!isOnlineClient) {
+      if (!matchOver && !roundOver) {
+        for (const b of bots) b.controller.update(dt);
+      } else {
+        for (const b of bots) b.player.setRemoteInput({ moveX:0, moveZ:0, jump:false, punch:false, grabThrow:false, bombHeld:false });
+      }
     }
 
     stepPhysics(dt);
@@ -704,46 +906,52 @@ async function bootstrap() {
     pickupManager.update(dt, camera);
 
     const impacts = petasanManager.update(dt, players);
-    for (const hit of impacts) {
-      const target = hit.player;
-      if (!target || target.eliminated || target.respawning) continue;
-      target.takeDamage(hit.damage);
-      target.addStagger?.(Math.round(hit.damage * 0.8));
-      const impulseMag = hit.magnitude ?? hit.impulse?.length?.() ?? 0;
-      if (impulseMag >= PHYSICS_TUNING.knockoutImpulseThreshold && target.spawnProtection <= 0) {
-        target.knockout?.(PHYSICS_TUNING.knockoutDuration);
-      }
-      modeManager?.onPlayerImpact?.(target, { ...hit, magnitude: impulseMag });
-      if (target.hp <= 0 && !target.eliminated && !target.respawning) handlePlayerOut(target, 'hp');
-    }
-
-    // Respawn timers
-    for (const [p, tmr] of [...respawnTimers.entries()]) {
-      if (!p || p.eliminated || matchOver) { respawnTimers.delete(p); continue; }
-      const left = tmr - dt;
-      if (left <= 0) {
-        respawnTimers.delete(p);
-        p.respawnAt(randomSpawn(), 1.5);
-        updateRoundHud();
-      } else {
-        respawnTimers.set(p, left);
+    if (!isOnlineClient) {
+      for (const hit of impacts) {
+        const target = hit.player;
+        if (!target || target.eliminated || target.respawning) continue;
+        target.takeDamage(hit.damage);
+        target.addStagger?.(Math.round(hit.damage * 0.8));
+        const impulseMag = hit.magnitude ?? hit.impulse?.length?.() ?? 0;
+        if (impulseMag >= PHYSICS_TUNING.knockoutImpulseThreshold && target.spawnProtection <= 0) {
+          target.knockout?.(PHYSICS_TUNING.knockoutDuration);
+        }
+        modeManager?.onPlayerImpact?.(target, { ...hit, magnitude: impulseMag });
+        if (target.hp <= 0 && !target.eliminated && !target.respawning) handlePlayerOut(target, 'hp');
       }
     }
 
-    // Mode update
-    if (!roundOver && !matchOver) {
-      modeManager?.update?.(dt);
-      checkModeRoundEnd();
-    }
-    updateModeHud();
-
-    // Round transition
-    if (roundOver && !matchOver && roundTransitionTimer > 0) {
-      roundTransitionTimer -= dt;
-      if (roundTransitionTimer <= 0) {
-        roundTransitionTimer = 0;
-        startNextRoundOrMatch();
+    if (!isOnlineClient) {
+      // Respawn timers
+      for (const [p, tmr] of [...respawnTimers.entries()]) {
+        if (!p || p.eliminated || matchOver) { respawnTimers.delete(p); continue; }
+        const left = tmr - dt;
+        if (left <= 0) {
+          respawnTimers.delete(p);
+          p.respawnAt(randomSpawn(), 1.5);
+          updateRoundHud();
+        } else {
+          respawnTimers.set(p, left);
+        }
       }
+
+      // Mode update
+      if (!roundOver && !matchOver) {
+        modeManager?.update?.(dt);
+        checkModeRoundEnd();
+      }
+      updateModeHud();
+
+      // Round transition
+      if (roundOver && !matchOver && roundTransitionTimer > 0) {
+        roundTransitionTimer -= dt;
+        if (roundTransitionTimer <= 0) {
+          roundTransitionTimer = 0;
+          startNextRoundOrMatch();
+        }
+      }
+    } else {
+      updateModeHud();
     }
 
     // Kamera follow pemain utama
@@ -771,6 +979,14 @@ async function bootstrap() {
         powerupHudEl.textContent = `Power-up: ${label} (${pu.remaining.toFixed(1)}s)`;
       } else {
         powerupHudEl.textContent = '';
+      }
+    }
+
+    if (isOnlineHost && network.connected) {
+      hostStateTimer += dt;
+      if (hostStateTimer >= 0.1) {
+        hostStateTimer = 0;
+        network.send({ type: 'game-state', state: buildHostState() });
       }
     }
 

@@ -26,7 +26,7 @@ export default {
       }
 
       const role = (url.searchParams.get('role') || '').toLowerCase();
-      if (role !== 'host' && role !== 'controller') {
+      if (role !== 'host' && role !== 'controller' && role !== 'player') {
         return error('Invalid role', 400);
       }
 

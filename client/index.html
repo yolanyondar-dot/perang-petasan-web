@@ -22,6 +22,18 @@
         background: #0b1020;
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       }
+      #orient-hint {
+        position: fixed; left: 12px; bottom: 12px; z-index: 30; display: none;
+        background: rgba(15,23,42,0.88); color: #fff; padding: 10px 12px; border-radius: 12px;
+        font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); max-width: min(320px, calc(100vw - 24px));
+      }
+      #orient-hint.show { display: block; }
+      #orient-hint b { color: #ffd54f; }
+      #orient-hint .row { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+      #orient-hint button { border:0; border-radius:8px; padding:8px 10px; font-weight:700; cursor:pointer; pointer-events:auto; }
+      #btn-fs-game { background:#ffd54f; color:#111; }
+      #btn-hide-orient { background:#334155; color:#fff; }
+      @media (orientation: landscape) { #orient-hint.auto-hide { display:none !important; } }
       #app {
         position: fixed;
         inset: 0;
@@ -227,10 +239,49 @@
     <div id="podium"><div class="panel"><h2>Papan Skor Akhir</h2><p id="podium-sub">Pertandingan selesai</p><div id="podium-table"></div><button id="btn-play-again" type="button">Main Lagi</button></div></div>
 
     <div id="overlay">
-      <h1>PERANG PETASAN</h1>
-      <p>Memuat fisika &amp; arena…</p>
+      <div class="lobby-card" style="width:min(520px,calc(100vw - 32px));background:rgba(15,23,42,0.9);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;backdrop-filter:blur(8px);color:#fff;">
+        <h1 style="font-size:clamp(28px,5vw,42px);letter-spacing:3px;text-align:center;margin-bottom:6px;">PERANG PETASAN</h1>
+        <p id="overlay-status" style="opacity:.75;font-size:14px;text-align:center;margin-bottom:18px;">Mabar online - buat atau gabung room</p>
+        <label style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Nama Kamu</label>
+        <input id="lobby-name" maxlength="24" placeholder="Pemain" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:16px;margin-bottom:14px;" />
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+          <button id="btn-host" type="button" style="padding:14px;border:0;border-radius:12px;background:#ffd54f;color:#111;font-weight:800;font-size:16px;cursor:pointer;">Buat Room</button>
+          <button id="btn-solo" type="button" style="padding:14px;border:0;border-radius:12px;background:#334155;color:#fff;font-weight:800;font-size:16px;cursor:pointer;">Main Solo</button>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <input id="lobby-code" maxlength="4" placeholder="KODE" style="flex:1;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:18px;text-transform:uppercase;letter-spacing:4px;text-align:center;font-weight:700;" />
+          <button id="btn-join" type="button" style="padding:12px 18px;border:0;border-radius:12px;background:#4fc3f7;color:#111;font-weight:800;font-size:16px;cursor:pointer;">Gabung</button>
+        </div>
+        <p id="lobby-msg" style="min-height:20px;margin-top:12px;font-size:13px;text-align:center;color:#ffb4b4;"></p>
+      </div>
     </div>
 
+    <div id="orient-hint" class="show auto-hide">
+      <div><b>Landscape</b> disarankan untuk pengalaman terbaik. Aktifkan <b>Fullscreen</b> juga.</div>
+      <div class="row">
+        <button id="btn-fs-game" type="button">Fullscreen</button>
+        <button id="btn-hide-orient" type="button">Tutup</button>
+      </div>
+    </div>
+    <script>
+      (() => {
+        const hint = document.getElementById('orient-hint');
+        const fsBtn = document.getElementById('btn-fs-game');
+        const hideBtn = document.getElementById('btn-hide-orient');
+        function update() {
+          const landscape = window.matchMedia('(orientation: landscape)').matches;
+          hint.classList.toggle('auto-hide', landscape);
+          if (landscape) hint.classList.remove('show');
+        }
+        fsBtn?.addEventListener('click', async () => {
+          try { if (!document.fullscreenElement) await document.documentElement.requestFullscreen(); } catch (_) {}
+        });
+        hideBtn?.addEventListener('click', () => hint.classList.remove('show'));
+        window.addEventListener('resize', update);
+        window.addEventListener('orientationchange', update);
+        update();
+      })();
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

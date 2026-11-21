@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#111827" />
+    <meta name="theme-color" content="#0b1020" />
     <title>Perang Petasan - Controller</title>
     <style>
       :root { color-scheme: dark; }
@@ -15,11 +15,13 @@
       }
       body { position: fixed; inset: 0; }
       button, input { font: inherit; }
-      .screen { position: absolute; inset: 0; display: none; padding: 16px; }
+      .screen { position: absolute; inset: 0; display: none; }
       .screen.active { display: flex; }
+
+      /* Join */
       #join-screen {
         flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-        background: radial-gradient(circle at top, #1d3557, #0b1020 65%);
+        padding: 16px; background: radial-gradient(circle at top, #1d3557, #0b1020 65%);
       }
       .card {
         width: min(420px, 100%); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
@@ -41,54 +43,108 @@
       #join-status { min-height: 22px; margin-top: 12px; font-size: 14px; text-align: center; color: #ffb4b4; }
       #join-status.ok { color: #9bf6a3; }
 
-      #pad-screen { flex-direction: column; padding: 10px; gap: 8px; }
+      /* Pad */
+      #pad-screen { flex-direction: column; padding: 8px; gap: 6px; background: radial-gradient(circle at 50% 100%, #16213a, #0b1020 70%); }
       #topbar {
         display: flex; align-items: center; justify-content: space-between; gap: 8px;
-        padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06);
-        font-size: 14px;
+        padding: 6px 10px; border-radius: 10px; background: rgba(255,255,255,0.05); font-size: 12px; z-index: 5;
       }
       #topbar b { color: #ffd54f; }
-      #status-dot { width: 10px; height: 10px; border-radius: 50%; background: #4caf50; display: inline-block; margin-right: 6px; }
+      #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; display: inline-block; margin-right: 6px; }
+      .top-actions { display:flex; gap:6px; align-items:center; }
+      .mini-btn { border:0; border-radius:8px; padding:6px 10px; background:rgba(255,255,255,0.12); color:#fff; font-size:11px; font-weight:700; }
+
       #pad-area {
-        flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 4px;
+        flex: 1; min-height: 0; display: grid; grid-template-columns: 42% 58%; gap: 8px; padding: 2px;
       }
-      .panel {
-        border-radius: 18px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-        position: relative; min-height: 0; overflow: hidden;
-      }
-      #joystick-panel { display: flex; align-items: center; justify-content: center; }
+      .panel { position: relative; min-height: 0; overflow: hidden; border-radius: 18px; }
+
+      /* Joystick */
+      #joystick-panel { display:flex; align-items:flex-end; justify-content:flex-start; padding: 0 0 18px 18px; }
       #joy-base {
-        width: min(58vw, 260px); aspect-ratio: 1; max-width: 260px; max-height: 260px;
-        border-radius: 50%; background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.14);
+        width: min(42vw, 220px); aspect-ratio: 1; max-width: 220px;
+        border-radius: 50%; background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.12);
         position: relative; touch-action: none;
+        box-shadow: inset 0 0 30px rgba(0,0,0,0.25);
+      }
+      #joy-base::before {
+        content:''; position:absolute; inset:18%; border-radius:50%; border:1px solid rgba(255,255,255,0.07);
       }
       #joy-knob {
         width: 38%; aspect-ratio: 1; border-radius: 50%; position: absolute; left: 50%; top: 50%;
-        transform: translate(-50%, -50%); background: radial-gradient(circle at 30% 30%, #8ecae6, #219ebc);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.35); pointer-events: none;
+        transform: translate(-50%, -50%); background: radial-gradient(circle at 30% 30%, #9be7ff, #219ebc);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.35), inset 0 1px 2px rgba(255,255,255,0.5); pointer-events: none;
       }
-      #joy-label { position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 12px; opacity: .65; }
+      #joy-label { position:absolute; bottom:-18px; width:100%; text-align:center; font-size:11px; opacity:.5; letter-spacing:1px; }
 
-      #buttons-panel {
-        display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px; padding: 14px;
+      /* MOBA action cluster */
+      #actions-panel { display:flex; align-items:flex-end; justify-content:flex-end; padding: 0 16px 14px 0; }
+      .action-cluster {
+        position: relative; width: min(52vw, 320px); aspect-ratio: 1; max-width: 320px;
       }
       .action-btn {
-        border: 0; border-radius: 18px; color: #111; font-weight: 900; font-size: clamp(16px, 2.8vw, 28px);
-        letter-spacing: 0.5px; box-shadow: 0 8px 0 rgba(0,0,0,0.25); cursor: pointer; touch-action: none;
+        position: absolute; border: 0; color: #111; font-weight: 900; cursor: pointer; touch-action: none;
+        display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1;
+        box-shadow: 0 8px 0 rgba(0,0,0,0.28), 0 10px 20px rgba(0,0,0,0.2);
+        transition: filter .08s;
       }
-      .action-btn:active, .action-btn.active { transform: translateY(4px); box-shadow: 0 4px 0 rgba(0,0,0,0.25); filter: brightness(1.05); }
-      #btn-jump { background: #8be9a8; }
-      #btn-punch { background: #ff8a80; }
-      #btn-grab { background: #82b1ff; }
-      #btn-bomb { background: #ffd54f; }
+      .action-btn .lbl { font-size: 11px; letter-spacing:.5px; }
+      .action-btn .sub { font-size: 9px; opacity:.75; margin-top:2px; }
+      .action-btn:active, .action-btn.active { transform: translateY(4px) scale(.98); box-shadow: 0 4px 0 rgba(0,0,0,0.28); filter: brightness(1.08); }
 
+      /* Big attack */
+      #btn-punch {
+        width: 42%; aspect-ratio:1; right: 6%; bottom: 6%; border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #ffb3ad, #ff5252);
+        font-size: 18px;
+      }
+      #btn-punch .lbl { font-size: 15px; }
+      /* Skill buttons */
+      .skill {
+        width: 24%; aspect-ratio:1; border-radius: 50%; font-size: 11px;
+        border: 2px solid rgba(255,255,255,0.15);
+      }
+      #btn-bomb { right: 36%; bottom: 42%; background: radial-gradient(circle at 35% 30%, #ffe082, #ffb300); }
+      #btn-jump { right: 58%; bottom: 18%; background: radial-gradient(circle at 35% 30%, #b9f6ca, #69f0ae); }
+      #btn-grab { right: 12%; bottom: 50%; background: radial-gradient(circle at 35% 30%, #b3d4ff, #448aff); }
+      .skill .lbl { font-size: 10px; }
+      .skill .sub { font-size: 8px; }
+
+      /* Landscape hint overlay */
+      #orientation-overlay {
+        position: absolute; inset: 0; display: none; z-index: 50;
+        background: rgba(7,10,20,0.92); backdrop-filter: blur(4px);
+        align-items: center; justify-content: center; padding: 24px; text-align: center;
+      }
+      #orientation-overlay.show { display: flex; }
+      .orient-card {
+        max-width: 360px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 18px; padding: 24px;
+      }
+      .orient-icon { font-size: 52px; margin-bottom: 10px; }
+      .orient-card h2 { font-size: 20px; margin-bottom: 8px; color: #ffd54f; }
+      .orient-card p { font-size: 14px; opacity: .85; line-height: 1.5; margin-bottom: 14px; }
+      .orient-actions { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+      .orient-actions button {
+        border:0; border-radius:12px; padding:12px 16px; font-weight:800; cursor:pointer;
+      }
+      #btn-fullscreen { background:#ffd54f; color:#111; }
+      #btn-dismiss-orient { background:rgba(255,255,255,0.12); color:#fff; }
+
+      @media (orientation: landscape) {
+        #orientation-overlay.auto-hide { display: none !important; }
+      }
       @media (orientation: portrait) {
-        #pad-area { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-        #joy-base { width: min(62vw, 280px); max-width: 280px; max-height: 280px; }
+        #pad-area { grid-template-columns: 1fr; grid-template-rows: 45% 55%; }
+        #joystick-panel { align-items:center; justify-content:center; padding: 8px; }
+        #actions-panel { align-items:center; justify-content:center; padding: 8px; }
+        #joy-base { width: min(58vw, 240px); }
+        .action-cluster { width: min(78vw, 320px); }
       }
       @media (max-height: 420px) {
-        #topbar { padding: 6px 10px; font-size: 12px; }
-        .action-btn { font-size: 16px; border-radius: 14px; }
+        #topbar { padding: 4px 8px; font-size: 11px; }
+        #joy-base { width: min(38vh, 180px); }
+        .action-cluster { width: min(58vh, 260px); }
       }
     </style>
   </head>
@@ -96,7 +152,7 @@
     <section id="join-screen" class="screen active">
       <div class="card">
         <h1>PERANG PETASAN</h1>
-        <div class="sub">Controller HP</div>
+        <div class="sub">Controller MOBA</div>
         <label for="room-code">Kode Room (4 huruf)</label>
         <input id="room-code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" />
         <label for="player-name">Nama Pemain (opsional)</label>
@@ -109,20 +165,37 @@
     <section id="pad-screen" class="screen">
       <div id="topbar">
         <div><span id="status-dot"></span><b id="room-label">ROOM</b> <span id="name-label"></span></div>
-        <div id="net-label">terhubung</div>
+        <div class="top-actions">
+          <span id="net-label">terhubung</span>
+          <button id="btn-fs-top" class="mini-btn" type="button">Fullscreen</button>
+        </div>
       </div>
       <div id="pad-area">
         <div id="joystick-panel" class="panel">
           <div id="joy-base">
             <div id="joy-knob"></div>
-            <div id="joy-label">JOYSTICK</div>
+            <div id="joy-label">GERAK</div>
           </div>
         </div>
-        <div id="buttons-panel" class="panel">
-          <button id="btn-jump" class="action-btn" data-action="jump">LOMPAT</button>
-          <button id="btn-punch" class="action-btn" data-action="punch">TINJU</button>
-          <button id="btn-grab" class="action-btn" data-action="grabThrow">ANGKAT</button>
-          <button id="btn-bomb" class="action-btn" data-action="bomb">PETASAN</button>
+        <div id="actions-panel" class="panel">
+          <div class="action-cluster">
+            <button id="btn-bomb" class="action-btn skill" data-action="bomb"><span class="lbl">BOM</span><span class="sub">PETASAN</span></button>
+            <button id="btn-grab" class="action-btn skill" data-action="grabThrow"><span class="lbl">GRAB</span><span class="sub">ANGKAT</span></button>
+            <button id="btn-jump" class="action-btn skill" data-action="jump"><span class="lbl">JUMP</span><span class="sub">LOMPAT</span></button>
+            <button id="btn-punch" class="action-btn" data-action="punch"><span class="lbl">TINJU</span><span class="sub">ATTACK</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div id="orientation-overlay" class="show auto-hide">
+        <div class="orient-card">
+          <div class="orient-icon">📱↔️</div>
+          <h2>Mode Landscape Disarankan</h2>
+          <p>Untuk kontrol MOBA yang nyaman, putar HP ke posisi <b>landscape</b> dan aktifkan <b>fullscreen</b>.</p>
+          <div class="orient-actions">
+            <button id="btn-fullscreen" type="button">Fullscreen</button>
+            <button id="btn-dismiss-orient" type="button">Lanjut</button>
+          </div>
         </div>
       </div>
     </section>
@@ -155,6 +228,7 @@
         const roomLabel = document.getElementById('room-label');
         const nameLabel = document.getElementById('name-label');
         const netLabel = document.getElementById('net-label');
+        const orientOverlay = document.getElementById('orientation-overlay');
 
         const state = { moveX: 0, moveZ: 0, jump: false, punch: false, grabThrow: false, bombHeld: false };
         let ws = null;
@@ -183,11 +257,34 @@
 
         function startSendLoop() {
           stopSendLoop();
-          sendTimer = setInterval(() => emitInput(false), 50); // 20Hz
+          sendTimer = setInterval(() => emitInput(false), 50);
         }
         function stopSendLoop() {
           if (sendTimer) { clearInterval(sendTimer); sendTimer = null; }
         }
+
+        async function requestFullscreen() {
+          const el = document.documentElement;
+          try {
+            if (!document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen();
+            if (screen.orientation && screen.orientation.lock) {
+              await screen.orientation.lock('landscape').catch(() => {});
+            }
+          } catch (_) {}
+        }
+
+        function updateOrientationHint() {
+          const landscape = window.matchMedia('(orientation: landscape)').matches;
+          orientOverlay.classList.toggle('auto-hide', landscape);
+          if (landscape) orientOverlay.classList.remove('show');
+          else orientOverlay.classList.add('show');
+        }
+        window.addEventListener('resize', updateOrientationHint);
+        window.addEventListener('orientationchange', updateOrientationHint);
+
+        document.getElementById('btn-fullscreen').addEventListener('click', async () => { await requestFullscreen(); updateOrientationHint(); });
+        document.getElementById('btn-fs-top').addEventListener('click', requestFullscreen);
+        document.getElementById('btn-dismiss-orient').addEventListener('click', () => { orientOverlay.classList.remove('show'); });
 
         function connectAndJoin() {
           const roomCode = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
@@ -202,9 +299,7 @@
           const url = `${base}/ws?role=controller&room=${encodeURIComponent(roomCode)}&name=${encodeURIComponent(name)}`;
           ws = new WebSocket(url);
 
-          ws.addEventListener('open', () => {
-            setStatus('Terhubung, menunggu konfirmasi...', true);
-          });
+          ws.addEventListener('open', () => { setStatus('Terhubung, menunggu konfirmasi...', true); });
           ws.addEventListener('message', (evt) => {
             let msg;
             try { msg = JSON.parse(String(evt.data)); } catch (_) { return; }
@@ -227,7 +322,7 @@
           });
         }
 
-        function handleJoined(res) {
+        async function handleJoined(res) {
           if (joined) return;
           joined = true;
           roomLabel.textContent = res.roomCode;
@@ -235,8 +330,11 @@
           joinScreen.classList.remove('active');
           padScreen.classList.add('active');
           netLabel.textContent = 'terhubung';
+          updateOrientationHint();
           startSendLoop();
           emitInput(true);
+          // try fullscreen on user gesture flow continuation
+          requestFullscreen();
         }
 
         roomInput.addEventListener('input', () => {
@@ -267,7 +365,6 @@
           const ky = dy * clamped;
           joyKnob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
           state.moveX = Math.max(-1, Math.min(1, kx / max));
-          // Atas joystick = maju (moveZ positif), bawah = mundur.
           state.moveZ = Math.max(-1, Math.min(1, -ky / max));
           emitInput(false);
         }
@@ -322,7 +419,6 @@
         bindActionButton(document.getElementById('btn-grab'), () => { state.grabThrow = true; }, () => { state.grabThrow = false; });
         bindActionButton(document.getElementById('btn-bomb'), () => { state.bombHeld = true; }, () => { state.bombHeld = false; });
 
-        // Prevent scroll/zoom gestures
         document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
         document.addEventListener('touchmove', (e) => { if (joined) e.preventDefault(); }, { passive: false });
       })();
