@@ -562,7 +562,7 @@ export function createPlayer(scene, options = {}) {
     return ok;
   }
 
-  function punch(players = []) {
+  function punch(players = [], petasans = []) {
     if (knockoutTimer > 0 || carriedBy) return false;
     if (punchCooldown > 0) return false;
     if (heldPetasan || carriedEntity) return false; // tangan sedang dipakai
@@ -584,7 +584,6 @@ export function createPlayer(scene, options = {}) {
       const dist = delta.length();
       if (dist > PUNCH_RANGE) continue;
       const dir = dist > 1e-6 ? delta.clone().normalize() : forward.clone();
-      // harus di depan pemain (dot dengan arah hadap)
       if (dir.dot(forward) < 0.2) continue;
 
       try {
@@ -599,6 +598,24 @@ export function createPlayer(scene, options = {}) {
       const punchImpulse = Math.hypot(PHYSICS_TUNING.punchKnockback * buff, PHYSICS_TUNING.punchUpward * buff);
       if (punchImpulse >= PHYSICS_TUNING.knockoutImpulseThreshold) target.knockout?.(PHYSICS_TUNING.knockoutDuration);
       if (target.hp <= 0) target.reset?.();
+    }
+
+    // BombSquad-like: punch/kick bombs
+    for (const p of petasans) {
+      if (!p || p.cleaned || p.exploded || p.held) continue;
+      let pt;
+      try { pt = p.body.translation(); } catch (_) { continue; }
+      const tpos = new THREE.Vector3(pt.x, pt.y, pt.z);
+      const delta = tpos.sub(my);
+      const dist = delta.length();
+      if (dist > PUNCH_RANGE + 0.3) continue;
+      const dir = dist > 1e-6 ? delta.clone().normalize() : forward.clone();
+      if (dir.dot(forward) < 0.1) continue;
+      try {
+        p.body.setLinvel({ x: dir.x * 10 * buff, y: 4.5 * buff, z: dir.z * 10 * buff }, true);
+        p.hasBeenThrown = true;
+        p.throwGrace = p.type === 'banting' ? 0.15 : 0;
+      } catch (_) {}
     }
     return true;
   }

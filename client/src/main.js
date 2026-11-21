@@ -543,18 +543,30 @@ async function bootstrap() {
     };
 
     // Rising edge actions
-    if (now.punch && !prev.punch) rp.punch(players);
+    if (now.punch && !prev.punch) rp.punch(players, petasanManager.petasans);
     if (now.grabThrow && !prev.grabThrow) rp.toggleCarryOrThrow(players, petasanManager.petasans);
 
     // Bomb hold/release
     if (now.bombHeld && !prev.bombHeld) {
       if (!rp.heldPetasan && !rp.carriedEntity && rp.knockoutTimer <= 0 && !rp.carriedBy && entry.throwCooldown <= 0) {
-        const spawnPos = rp.group.position.clone();
-        spawnPos.y += 0.5;
-        const type = (rp.powerUp?.type === 'banting' || rp.powerUp?.type === 'renteng') ? rp.powerUp.type : 'normal';
-        const petasan = petasanManager.spawn(spawnPos, { fuse: 2.2, type });
-        const held = rp.holdPetasan(petasan);
-        if (!held) petasanManager.discard(petasan);
+        let nearest = null, nearDist = 1.6;
+        const my = rp.group.position;
+        for (const p of petasanManager.petasans) {
+          if (!p || p.cleaned || p.exploded || p.held || p.carried) continue;
+          let pt; try { pt = p.body.translation(); } catch (_) { continue; }
+          const d = my.distanceTo({ x: pt.x, y: my.y, z: pt.z });
+          if (d < nearDist) { nearDist = d; nearest = p; }
+        }
+        if (nearest) {
+          rp.holdPetasan(nearest);
+        } else {
+          const spawnPos = rp.group.position.clone();
+          spawnPos.y += 0.5;
+          const type = (rp.powerUp?.type === 'banting' || rp.powerUp?.type === 'renteng') ? rp.powerUp.type : 'normal';
+          const petasan = petasanManager.spawn(spawnPos, { fuse: 2.2, type });
+          const held = rp.holdPetasan(petasan);
+          if (!held) petasanManager.discard(petasan);
+        }
       }
     }
     if (!now.bombHeld && prev.bombHeld) {
@@ -865,6 +877,16 @@ async function bootstrap() {
     if (throwCooldown > 0 || matchOver || roundOver || player.eliminated) return;
     if (player.heldPetasan || player.carriedEntity) return;
     if (player.knockoutTimer > 0 || player.carriedBy) return;
+    // BombSquad-like: pick up nearby loose bomb first
+    let nearest = null, nearDist = 1.6;
+    const my = player.group.position;
+    for (const p of petasanManager.petasans) {
+      if (!p || p.cleaned || p.exploded || p.held || p.carried) continue;
+      let pt; try { pt = p.body.translation(); } catch (_) { continue; }
+      const d = my.distanceTo({ x: pt.x, y: my.y, z: pt.z });
+      if (d < nearDist) { nearDist = d; nearest = p; }
+    }
+    if (nearest) { const held = player.holdPetasan(nearest); if (held) return; }
     const spawnPos = player.group.position.clone();
     spawnPos.y += 0.5;
     const type = (player.powerUp?.type === 'banting' || player.powerUp?.type === 'renteng') ? player.powerUp.type : 'normal';
@@ -880,7 +902,7 @@ async function bootstrap() {
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyE') { e.preventDefault(); if (!e.repeat && !isOnlineClient) trySpawnAndHold(); }
-    if (e.code === 'KeyF') { e.preventDefault(); if (!e.repeat && !isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.punch(players); }
+    if (e.code === 'KeyF') { e.preventDefault(); if (!e.repeat && !isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.punch(players, petasanManager.petasans); }
     if (e.code === 'KeyQ' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') { e.preventDefault(); if (!e.repeat && !isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.toggleCarryOrThrow(players, petasanManager.petasans); }
   });
   window.addEventListener('keyup', (e) => {
@@ -893,7 +915,7 @@ async function bootstrap() {
     if (e.target !== canvas) return;
     canvas.setPointerCapture?.(e.pointerId);
     if (e.button === 0) { mouseBomb = true; if (!isOnlineClient) trySpawnAndHold(); }
-    else if (e.button === 2) { mousePunch = true; if (!isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.punch(players); }
+    else if (e.button === 2) { mousePunch = true; if (!isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.punch(players, petasanManager.petasans); }
   });
   canvas.addEventListener('pointerup', (e) => {
     if (e.button === 0) { mouseBomb = false; if (!isOnlineClient) tryThrowHeld(); }
@@ -933,7 +955,7 @@ async function bootstrap() {
     el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('pointerleave', (e) => { if (ptr !== null) end(e); });
   }
   bindTcBtn('tc-jump', () => { touchJump = true; }, () => { touchJump = false; });
-  bindTcBtn('tc-punch', () => { touchPunch = true; if (!isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.punch(players); }, () => { touchPunch = false; });
+  bindTcBtn('tc-punch', () => { touchPunch = true; if (!isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.punch(players, petasanManager.petasans); }, () => { touchPunch = false; });
   bindTcBtn('tc-grab', () => { touchGrab = true; if (!isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.toggleCarryOrThrow(players, petasanManager.petasans); }, () => { touchGrab = false; });
   bindTcBtn('tc-bomb', () => { touchBomb = true; if (!isOnlineClient) trySpawnAndHold(); }, () => { touchBomb = false; if (!isOnlineClient) tryThrowHeld(); });
   showTouchControls(true);
