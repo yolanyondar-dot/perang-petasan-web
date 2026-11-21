@@ -131,8 +131,20 @@
       (() => {
         const qs = new URLSearchParams(location.search);
         const serverParam = qs.get('server');
-        const defaultServer = location.port === '3001' ? location.origin : `${location.protocol}//${location.hostname}:3001`;
-        const serverUrl = (serverParam || defaultServer).replace(/\/$/, '');
+
+        function getWsBase() {
+          if (serverParam) {
+            const u = serverParam.replace(/\/$/, '');
+            if (u.startsWith('ws://') || u.startsWith('wss://')) return u;
+            return u.replace(/^http/, 'ws');
+          }
+          if (location.port === '5173' || location.port === '5174') {
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            return `${proto}//${location.hostname}:3001`;
+          }
+          const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          return `${proto}//${location.host}`;
+        }
 
         const joinScreen = document.getElementById('join-screen');
         const padScreen = document.getElementById('pad-screen');
@@ -145,7 +157,7 @@
         const netLabel = document.getElementById('net-label');
 
         const state = { moveX: 0, moveZ: 0, jump: false, punch: false, grabThrow: false, bombHeld: false };
-        let socket = null;
+        let ws = null;
         let joined = false;
         let sendTimer = null;
         let lastSent = '';
@@ -155,24 +167,18 @@
           joinStatus.className = ok ? 'ok' : '';
         }
 
-        function loadSocketIO() {
-          return new Promise((resolve, reject) => {
-            if (window.io) return resolve(window.io);
-            const s = document.createElement('script');
-            s.src = `${serverUrl}/socket.io/socket.io.js`;
-            s.onload = () => window.io ? resolve(window.io) : reject(new Error('socket.io client tidak tersedia'));
-            s.onerror = () => reject(new Error(`Gagal memuat socket.io dari ${serverUrl}. Pastikan server berjalan.`));
-            document.head.appendChild(s);
-          });
+        function send(msg) {
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          ws.send(JSON.stringify(msg));
         }
 
         function emitInput(force = false) {
-          if (!socket || !joined) return;
-          const payload = { state: { ...state } };
-          const json = JSON.stringify(payload.state);
+          if (!joined) return;
+          const payload = { ...state };
+          const json = JSON.stringify(payload);
           if (!force && json === lastSent) return;
           lastSent = json;
-          socket.emit('player-input', payload);
+          send({ type: 'player-input', state: payload });
         }
 
         function startSendLoop() {
@@ -191,35 +197,33 @@
 
           setStatus('Menghubungkan...', true);
           joinBtn.disabled = true;
-          loadSocketIO().then((io) => {
-            if (socket) socket.disconnect();
-            socket = io(serverUrl, { transports: ['websocket', 'polling'] });
-            socket.on('connect', () => {
-              setStatus('Terhubung, bergabung ke room...', true);
-              socket.emit('join-room', { roomCode, name }, (res) => {
-                if (res && res.ok) handleJoined(res);
-              });
-            });
-            socket.on('joined-room', handleJoined);
-            socket.on('join-error', (err) => {
-              setStatus(err?.message || 'Gagal bergabung ke room.');
+          try { ws?.close(); } catch (_) {}
+          const base = getWsBase();
+          const url = `${base}/ws?role=controller&room=${encodeURIComponent(roomCode)}&name=${encodeURIComponent(name)}`;
+          ws = new WebSocket(url);
+
+          ws.addEventListener('open', () => {
+            setStatus('Terhubung, menunggu konfirmasi...', true);
+          });
+          ws.addEventListener('message', (evt) => {
+            let msg;
+            try { msg = JSON.parse(String(evt.data)); } catch (_) { return; }
+            if (msg.type === 'joined-room' && msg.ok) {
+              handleJoined(msg);
+            } else if (msg.type === 'join-error') {
+              setStatus(msg.message || 'Gagal bergabung ke room.');
               joinBtn.disabled = false;
-            });
-            socket.on('disconnect', () => {
-              netLabel.textContent = 'terputus';
-              if (joined) setStatus('Koneksi terputus.');
-            });
-            socket.on('room-closed', () => {
+            } else if (msg.type === 'room-closed') {
               netLabel.textContent = 'room ditutup';
               setStatus('Room ditutup oleh host.');
-            });
-            socket.on('connect_error', (err) => {
-              setStatus(`Gagal konek: ${err?.message || err}`);
-              joinBtn.disabled = false;
-            });
-          }).catch((err) => {
-            setStatus(err.message || String(err));
-            joinBtn.disabled = false;
+            }
+          });
+          ws.addEventListener('close', () => {
+            netLabel.textContent = 'terputus';
+            if (!joined) { setStatus('Koneksi gagal / terputus.'); joinBtn.disabled = false; }
+          });
+          ws.addEventListener('error', () => {
+            if (!joined) { setStatus('Gagal konek ke server.'); joinBtn.disabled = false; }
           });
         }
 

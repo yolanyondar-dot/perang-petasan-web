@@ -1,0 +1,25 @@
+name = "perang-petasan"
+main = "src/index.ts"
+compatibility_date = "2025-11-20"
+workers_dev = true
+
+[assets]
+directory = "../client/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "FightRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["FightRoom"]
+
+[[migrations]]
+tag = "v2"
+deleted_classes = ["Matchmaker"]
+
+[[routes]]
+pattern = "petasan.yondarprojects.my.id"
+custom_domain = true

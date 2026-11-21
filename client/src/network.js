@@ -1,85 +1,105 @@
-import { io } from 'socket.io-client';
-
-function getServerUrl() {
+function getWsUrl() {
   const qs = new URLSearchParams(location.search);
   const fromQuery = qs.get('server');
-  if (fromQuery) return fromQuery.replace(/\/$/, '');
-  // Dev default: Vite di 5173, socket server di 3001. Produksi/same-origin: pakai origin.
-  if (location.port === '5173' || location.port === '5174') {
-    return `${location.protocol}//${location.hostname}:3001`;
+  if (fromQuery) {
+    const u = fromQuery.replace(/\/$/, '');
+    if (u.startsWith('ws://') || u.startsWith('wss://')) return u;
+    return u.replace(/^http/, 'ws');
   }
-  return location.origin;
+  // Dev: Vite on 5173, node server on 3001 (Socket.IO path not used here, but WS server may differ).
+  // For Cloudflare/production same-origin, use current host.
+  if (location.port === '5173' || location.port === '5174') {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${location.hostname}:3001`;
+  }
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}`;
 }
 
 function getControllerUrl() {
-  const proto = location.protocol === 'https:' ? 'https:' : 'http:';
-  const host = location.hostname;
-  const port = location.port === '5173' || location.port === '5174' ? '5173' : location.port;
-  const base = `${proto}//${host}${port ? `:${port}` : ''}`;
-  return `${base}/controller.html`;
+  return `${location.protocol}//${location.host}/controller.html`;
 }
 
 export function createNetwork(handlers = {}) {
-  const serverUrl = getServerUrl();
-  let socket = null;
+  const wsBase = getWsUrl();
+  let ws = null;
   let roomCode = null;
   let connected = false;
+  let shouldReconnect = true;
+  let reconnectTimer = null;
+  let reconnectAttempts = 0;
 
   function emitRoomCreated(code) {
     roomCode = code;
-    handlers.onRoomCreated?.({ roomCode: code, serverUrl, controllerUrl: getControllerUrl() });
+    handlers.onRoomCreated?.({ roomCode: code, serverUrl: wsBase, controllerUrl: getControllerUrl() });
+  }
+
+  function clearReconnect() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  }
+
+  function scheduleReconnect() {
+    if (!shouldReconnect) return;
+    clearReconnect();
+    const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 8000);
+    reconnectAttempts += 1;
+    reconnectTimer = setTimeout(() => connect(), delay);
   }
 
   function connect() {
-    socket = io(serverUrl, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 20,
-      reconnectionDelay: 1000,
-    });
+    clearReconnect();
+    try { ws?.close(); } catch (_) {}
+    const url = `${wsBase}/ws?role=host`;
+    ws = new WebSocket(url);
 
-    socket.on('connect', () => {
+    ws.addEventListener('open', () => {
       connected = true;
-      handlers.onStatus?.({ connected: true, serverUrl });
-      socket.emit('create-room', {}, (res) => {
-        if (res?.ok && res.roomCode) emitRoomCreated(res.roomCode);
-      });
+      reconnectAttempts = 0;
+      handlers.onStatus?.({ connected: true, serverUrl: wsBase });
     });
 
-    socket.on('room-created', (payload) => {
-      if (payload?.roomCode) emitRoomCreated(payload.roomCode);
+    ws.addEventListener('message', (evt) => {
+      let msg;
+      try { msg = JSON.parse(String(evt.data)); } catch (_) { return; }
+      if (!msg || typeof msg !== 'object') return;
+      switch (msg.type) {
+        case 'room-created':
+          if (msg.roomCode) emitRoomCreated(msg.roomCode);
+          break;
+        case 'player-joined':
+          handlers.onPlayerJoined?.(msg);
+          break;
+        case 'player-input':
+          handlers.onPlayerInput?.(msg);
+          break;
+        case 'player-left':
+          handlers.onPlayerLeft?.(msg);
+          break;
+        default:
+          break;
+      }
     });
 
-    socket.on('player-joined', (payload) => {
-      handlers.onPlayerJoined?.(payload);
-    });
-
-    socket.on('player-input', (payload) => {
-      handlers.onPlayerInput?.(payload);
-    });
-
-    socket.on('player-left', (payload) => {
-      handlers.onPlayerLeft?.(payload);
-    });
-
-    socket.on('disconnect', (reason) => {
+    ws.addEventListener('close', (evt) => {
+      const wasConnected = connected;
       connected = false;
-      handlers.onStatus?.({ connected: false, reason, serverUrl });
+      handlers.onStatus?.({ connected: false, reason: evt.reason || `close:${evt.code}`, serverUrl: wsBase });
+      if (shouldReconnect) scheduleReconnect();
     });
 
-    socket.on('connect_error', (err) => {
-      handlers.onStatus?.({ connected: false, error: err?.message || String(err), serverUrl });
+    ws.addEventListener('error', () => {
+      handlers.onStatus?.({ connected: false, error: 'WebSocket error', serverUrl: wsBase });
     });
 
-    return socket;
+    return ws;
   }
 
   return {
     connect,
-    get socket() { return socket; },
+    get socket() { return ws; },
     get roomCode() { return roomCode; },
     get connected() { return connected; },
-    get serverUrl() { return serverUrl; },
+    get serverUrl() { return wsBase; },
     getControllerUrl,
   };
 }
