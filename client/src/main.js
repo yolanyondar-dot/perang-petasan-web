@@ -23,6 +23,13 @@ const lobbyMsg = document.getElementById('lobby-msg');
 const btnHost = document.getElementById('btn-host');
 const btnJoin = document.getElementById('btn-join');
 const btnSolo = document.getElementById('btn-solo');
+const lobbyMain = document.getElementById('lobby-main');
+const partyPanel = document.getElementById('party-panel');
+const partyCodeEl = document.getElementById('party-code');
+const partyUrlEl = document.getElementById('party-url');
+const partyPlayersEl = document.getElementById('party-players');
+const partyMsgEl = document.getElementById('party-msg');
+const btnPartyStart = document.getElementById('btn-party-start');
 const hudStats = document.getElementById('hud-stats');
 const roomCodeEl = document.getElementById('room-code');
 const roomUrlEl = document.getElementById('room-url');
@@ -657,11 +664,34 @@ async function bootstrap() {
   }
 
   // --- Network -------------------------------------------------------------
+  let resolvePartyStart = null;
+  const partyStartPromise = isOnlineHost ? new Promise((r) => { resolvePartyStart = r; }) : Promise.resolve();
+  function refreshPartyUI() {
+    if (!partyPanel) return;
+    if (partyCodeEl) partyCodeEl.textContent = network.roomCode || lobby.roomCode || '----';
+    if (partyUrlEl) partyUrlEl.textContent = `${location.origin}${location.pathname}`;
+    if (partyPlayersEl) {
+      const items = [`<div>👑 ${playerName} (Host)</div>`];
+      for (const [, entry] of remotes.entries()) {
+        const n = entry?.player?.name || 'Pemain';
+        items.push(`<div>🎮 ${n}</div>`);
+      }
+      partyPlayersEl.innerHTML = items.join('');
+    }
+  }
+  btnPartyStart?.addEventListener('click', () => { if (resolvePartyStart) { resolvePartyStart(); resolvePartyStart = null; } });
+
   const network = createNetwork({
     onRoomCreated: ({ roomCode, controllerUrl }) => {
       if (roomCodeEl) roomCodeEl.textContent = roomCode;
       if (roomUrlEl) {
         roomUrlEl.innerHTML = `Kode room: <b>${roomCode}</b><br>Buka <b>${controllerUrl}</b> di HP (Wi-Fi sama)<br><span class="muted">Mode: online host</span>`;
+      }
+      if (isOnlineHost) {
+        if (overlayStatus) overlayStatus.textContent = 'Party dibuat! Bagikan kode ke teman.';
+        if (lobbyMain) lobbyMain.style.display = 'none';
+        if (partyPanel) partyPanel.style.display = 'block';
+        refreshPartyUI();
       }
     },
     onJoinedRoom: (msg) => {
@@ -669,14 +699,25 @@ async function bootstrap() {
         localPlayerId = msg.playerId || msg.controllerId || localPlayerId;
         if (roomCodeEl) roomCodeEl.textContent = msg.roomCode || lobby.roomCode || '-';
         if (roomUrlEl) roomUrlEl.innerHTML = `Terhubung ke room <b>${msg.roomCode || lobby.roomCode}</b><br><span class="muted">Mode: online player</span>`;
-        if (overlayStatus) overlayStatus.textContent = 'Terhubung! Memuat arena...';
-        overlay?.classList.add('hidden');
+        if (overlayStatus) overlayStatus.textContent = 'Terhubung! Menunggu game...';
+        if (lobbyMain) lobbyMain.style.display = 'none';
+        if (partyPanel) {
+          partyPanel.style.display = 'block';
+          if (partyCodeEl) partyCodeEl.textContent = msg.roomCode || lobby.roomCode || '----';
+          if (partyMsgEl) partyMsgEl.textContent = 'Terhubung. Menunggu host memulai...';
+          const startBtn = document.getElementById('btn-party-start');
+          if (startBtn) { startBtn.style.display = 'none'; }
+        }
+        // keep overlay visible briefly, hide when first state arrives or after short delay
+        setTimeout(() => overlay?.classList.add('hidden'), 800);
       }
     },
     onJoinError: (msg) => {
       if (isOnlineClient) {
         if (overlayStatus) overlayStatus.textContent = 'Gagal gabung room';
         if (lobbyMsg) { lobbyMsg.textContent = msg?.message || 'Gagal bergabung ke room.'; lobbyMsg.style.color = '#ffb4b4'; }
+        if (lobbyMain) lobbyMain.style.display = 'block';
+        if (partyPanel) partyPanel.style.display = 'none';
         overlay?.classList.remove('hidden');
       }
     },
@@ -693,6 +734,7 @@ async function bootstrap() {
       if (!id) return;
       ensureRemotePlayer(id, name || 'Pemain');
       if (roomUrlEl && isOnlineHost) roomUrlEl.innerHTML = `Kode room: <b>${network.roomCode || '-'}</b><br><span class="muted">${remotes.size} pemain remote terhubung</span>`;
+      refreshPartyUI();
     },
     onPlayerInput: ({ controllerId, playerId, state, kind }) => {
       const id = playerId || controllerId;
@@ -703,6 +745,7 @@ async function bootstrap() {
     onPlayerLeft: ({ controllerId, playerId }) => {
       const id = playerId || controllerId;
       if (id) removeRemote(id);
+      refreshPartyUI();
     },
     onRoomClosed: () => {
       if (isOnlineClient) {
@@ -802,16 +845,19 @@ async function bootstrap() {
   const keyState = new Set();
   let mouseBomb = false;
   let mousePunch = false;
+  let touchMoveX = 0, touchMoveZ = 0, touchJump = false, touchPunch = false, touchGrab = false, touchBomb = false;
   window.addEventListener('keydown', (e) => keyState.add(e.code));
   window.addEventListener('keyup', (e) => keyState.delete(e.code));
   function getLocalInputState() {
+    const kx = (keyState.has('KeyD') || keyState.has('ArrowRight') ? 1 : 0) - (keyState.has('KeyA') || keyState.has('ArrowLeft') ? 1 : 0);
+    const kz = (keyState.has('KeyW') || keyState.has('ArrowUp') ? 1 : 0) - (keyState.has('KeyS') || keyState.has('ArrowDown') ? 1 : 0);
     return {
-      moveX: (keyState.has('KeyD') || keyState.has('ArrowRight') ? 1 : 0) - (keyState.has('KeyA') || keyState.has('ArrowLeft') ? 1 : 0),
-      moveZ: (keyState.has('KeyW') || keyState.has('ArrowUp') ? 1 : 0) - (keyState.has('KeyS') || keyState.has('ArrowDown') ? 1 : 0),
-      jump: keyState.has('Space'),
-      punch: keyState.has('KeyF') || mousePunch,
-      grabThrow: keyState.has('KeyQ') || keyState.has('ShiftLeft') || keyState.has('ShiftRight'),
-      bombHeld: keyState.has('KeyE') || mouseBomb,
+      moveX: Math.max(-1, Math.min(1, kx + touchMoveX)),
+      moveZ: Math.max(-1, Math.min(1, kz + touchMoveZ)),
+      jump: keyState.has('Space') || touchJump,
+      punch: keyState.has('KeyF') || mousePunch || touchPunch,
+      grabThrow: keyState.has('KeyQ') || keyState.has('ShiftLeft') || keyState.has('ShiftRight') || touchGrab,
+      bombHeld: keyState.has('KeyE') || mouseBomb || touchBomb,
     };
   }
 
@@ -858,6 +904,40 @@ async function bootstrap() {
     if (e.button === 2) { mousePunch = false; }
   });
 
+  // --- Touch controls (virtual joystick + MOBA buttons) --------------------
+  const touchControls = document.getElementById('touch-controls');
+  const tcJoyBase = document.getElementById('tc-joy-base');
+  const tcJoyKnob = document.getElementById('tc-joy-knob');
+  function showTouchControls(show) { touchControls?.classList.toggle('show', !!show); }
+  if (tcJoyBase && tcJoyKnob) {
+    let joyPointer = null, joyCenter = { x: 0, y: 0 }, joyRadius = 1;
+    const resetJoy = () => { touchMoveX = 0; touchMoveZ = 0; tcJoyKnob.style.transform = 'translate(-50%, -50%)'; };
+    const updateJoy = (cx, cy) => {
+      const dx = cx - joyCenter.x, dy = cy - joyCenter.y;
+      const max = joyRadius * 0.38, dist = Math.hypot(dx, dy), clamped = dist > max ? max / dist : 1;
+      const kx = dx * clamped, ky = dy * clamped;
+      tcJoyKnob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+      touchMoveX = Math.max(-1, Math.min(1, kx / max));
+      touchMoveZ = Math.max(-1, Math.min(1, -ky / max));
+    };
+    tcJoyBase.addEventListener('pointerdown', (e) => { e.preventDefault(); joyPointer = e.pointerId; tcJoyBase.setPointerCapture(e.pointerId); const r = tcJoyBase.getBoundingClientRect(); joyCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 }; joyRadius = r.width / 2; updateJoy(e.clientX, e.clientY); });
+    tcJoyBase.addEventListener('pointermove', (e) => { if (e.pointerId !== joyPointer) return; e.preventDefault(); updateJoy(e.clientX, e.clientY); });
+    const joyEnd = (e) => { if (e.pointerId !== joyPointer) return; joyPointer = null; resetJoy(); };
+    tcJoyBase.addEventListener('pointerup', joyEnd); tcJoyBase.addEventListener('pointercancel', joyEnd);
+  }
+  function bindTcBtn(id, onDown, onUp) {
+    const el = document.getElementById(id); if (!el) return;
+    let ptr = null;
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); ptr = e.pointerId; el.setPointerCapture?.(e.pointerId); el.classList.add('active'); onDown(); });
+    const end = (e) => { if (ptr !== null && e.pointerId !== ptr) return; ptr = null; el.classList.remove('active'); onUp(); };
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('pointerleave', (e) => { if (ptr !== null) end(e); });
+  }
+  bindTcBtn('tc-jump', () => { touchJump = true; }, () => { touchJump = false; });
+  bindTcBtn('tc-punch', () => { touchPunch = true; if (!isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.punch(players); }, () => { touchPunch = false; });
+  bindTcBtn('tc-grab', () => { touchGrab = true; if (!isOnlineClient && !matchOver && !roundOver && !player.eliminated) player.toggleCarryOrThrow(players, petasanManager.petasans); }, () => { touchGrab = false; });
+  bindTcBtn('tc-bomb', () => { touchBomb = true; if (!isOnlineClient) trySpawnAndHold(); }, () => { touchBomb = false; if (!isOnlineClient) tryThrowHeld(); });
+  showTouchControls(true);
+
   // --- Resize --------------------------------------------------------------
   window.addEventListener('resize', () => {
     const w = window.innerWidth;
@@ -875,6 +955,15 @@ async function bootstrap() {
   if (isOnlineClient) {
     if (overlayStatus) overlayStatus.textContent = `Menghubungkan ke room ${lobby.roomCode}...`;
     overlay?.classList.remove('hidden');
+  } else if (isOnlineHost) {
+    if (overlayStatus) overlayStatus.textContent = 'Membuat party...';
+    if (lobbyMain) lobbyMain.style.display = 'none';
+    if (partyPanel) partyPanel.style.display = 'block';
+    if (partyMsgEl) partyMsgEl.textContent = 'Menunggu room dibuat...';
+    overlay?.classList.remove('hidden');
+    await partyStartPromise;
+    overlay?.classList.add('hidden');
+    showRoundBanner('Ronde 1', 'Party dimulai!', 1500);
   } else {
     overlay?.classList.add('hidden');
     showRoundBanner('Ronde 1', 'Siap bertarung!', 1500);

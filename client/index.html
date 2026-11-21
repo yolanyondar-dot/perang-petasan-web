@@ -22,6 +22,57 @@
         background: #0b1020;
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       }
+      #touch-controls {
+        position: fixed; inset: 0; z-index: 8; display: none; pointer-events: none;
+      }
+      #touch-controls.show { display: block; }
+      #tc-joy-zone {
+        position: absolute; left: 0; bottom: 0; width: 42%; height: 55%;
+        display: flex; align-items: flex-end; justify-content: flex-start; padding: 0 0 28px 28px;
+        pointer-events: none;
+      }
+      #tc-joy-base {
+        width: min(34vw, 180px); aspect-ratio: 1; max-width: 180px; border-radius: 50%;
+        background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.14);
+        position: relative; pointer-events: auto; touch-action: none;
+        box-shadow: inset 0 0 24px rgba(0,0,0,0.2);
+      }
+      #tc-joy-base::before { content:''; position:absolute; inset:18%; border-radius:50%; border:1px solid rgba(255,255,255,0.07); }
+      #tc-joy-knob {
+        width: 38%; aspect-ratio: 1; border-radius: 50%; position: absolute; left: 50%; top: 50%;
+        transform: translate(-50%, -50%); background: radial-gradient(circle at 30% 30%, #9be7ff, #219ebc);
+        box-shadow: 0 8px 18px rgba(0,0,0,0.35); pointer-events: none;
+      }
+      #tc-actions {
+        position: absolute; right: 0; bottom: 0; width: 42%; height: 60%;
+        display: flex; align-items: flex-end; justify-content: flex-end; padding: 0 24px 24px 0;
+        pointer-events: none;
+      }
+      .tc-cluster { position: relative; width: min(36vw, 240px); aspect-ratio: 1; max-width: 240px; pointer-events: none; }
+      .tc-btn {
+        position: absolute; border: 0; color: #111; font-weight: 900; cursor: pointer; touch-action: none;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1;
+        box-shadow: 0 6px 0 rgba(0,0,0,0.28); pointer-events: auto; user-select: none;
+      }
+      .tc-btn .lbl { font-size: 11px; letter-spacing:.4px; }
+      .tc-btn .sub { font-size: 8px; opacity:.72; margin-top:2px; }
+      .tc-btn:active, .tc-btn.active { transform: translateY(3px) scale(.98); box-shadow: 0 3px 0 rgba(0,0,0,0.28); filter: brightness(1.08); }
+      #tc-punch { width: 44%; aspect-ratio:1; right: 4%; bottom: 4%; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffb3ad, #ff5252); }
+      #tc-punch .lbl { font-size: 14px; }
+      .tc-skill { width: 25%; aspect-ratio:1; border-radius: 50%; border: 2px solid rgba(255,255,255,0.15); }
+      #tc-bomb { right: 36%; bottom: 44%; background: radial-gradient(circle at 35% 30%, #ffe082, #ffb300); }
+      #tc-jump { right: 58%; bottom: 18%; background: radial-gradient(circle at 35% 30%, #b9f6ca, #69f0ae); }
+      #tc-grab { right: 12%; bottom: 52%; background: radial-gradient(circle at 35% 30%, #b3d4ff, #448aff); }
+      @media (max-width: 700px) {
+        #tc-joy-base { width: min(38vw, 160px); }
+        .tc-cluster { width: min(42vw, 210px); }
+      }
+      @media (max-height: 500px) {
+        #tc-joy-base { width: min(32vh, 140px); }
+        .tc-cluster { width: min(40vh, 190px); }
+        #tc-joy-zone { padding-bottom: 14px; padding-left: 14px; }
+        #tc-actions { padding-bottom: 14px; padding-right: 14px; }
+      }
       #orient-hint {
         position: fixed; left: 12px; bottom: 12px; z-index: 30; display: none;
         background: rgba(15,23,42,0.88); color: #fff; padding: 10px 12px; border-radius: 12px;
@@ -164,8 +215,8 @@
 
     <div id="hud">
       <b>PERANG PETASAN</b><br />
-      WASD / Panah: bergerak &middot; Space: lompat &middot; F / Klik Kanan: tinju<br />
-      E / Klik Kiri: tahan sumbu, lepas lempar &middot; Q / Shift: angkat &amp; lempar<br />
+      Gunakan <b>joystick virtual</b> (kiri) untuk gerak &middot; tombol <b>MOBA</b> (kanan): BOM/GRAB/JUMP/TINJU<br />
+      <span style="opacity:.7">Keyboard tetap didukung: WASD/Space/F/E/Q</span><br />
       <span id="hud-stats">memuat…</span>
     </div>
 
@@ -239,20 +290,59 @@
     <div id="podium"><div class="panel"><h2>Papan Skor Akhir</h2><p id="podium-sub">Pertandingan selesai</p><div id="podium-table"></div><button id="btn-play-again" type="button">Main Lagi</button></div></div>
 
     <div id="overlay">
-      <div class="lobby-card" style="width:min(520px,calc(100vw - 32px));background:rgba(15,23,42,0.9);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;backdrop-filter:blur(8px);color:#fff;">
-        <h1 style="font-size:clamp(28px,5vw,42px);letter-spacing:3px;text-align:center;margin-bottom:6px;">PERANG PETASAN</h1>
-        <p id="overlay-status" style="opacity:.75;font-size:14px;text-align:center;margin-bottom:18px;">Mabar online - buat atau gabung room</p>
-        <label style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Nama Kamu</label>
-        <input id="lobby-name" maxlength="24" placeholder="Pemain" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:16px;margin-bottom:14px;" />
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
-          <button id="btn-host" type="button" style="padding:14px;border:0;border-radius:12px;background:#ffd54f;color:#111;font-weight:800;font-size:16px;cursor:pointer;">Buat Room</button>
-          <button id="btn-solo" type="button" style="padding:14px;border:0;border-radius:12px;background:#334155;color:#fff;font-weight:800;font-size:16px;cursor:pointer;">Main Solo</button>
+      <div class="lobby-card" style="width:min(560px,calc(100vw - 32px));background:linear-gradient(180deg,rgba(30,41,59,0.96),rgba(15,23,42,0.96));border:1px solid rgba(255,255,255,0.12);border-radius:24px;padding:28px;backdrop-filter:blur(10px);color:#fff;box-shadow:0 20px 60px rgba(0,0,0,0.45);">
+        <div style="text-align:center;margin-bottom:18px;">
+          <div style="font-size:13px;letter-spacing:2px;color:#ffd54f;font-weight:800;margin-bottom:4px;">PARTY GAME</div>
+          <h1 style="font-size:clamp(30px,6vw,48px);letter-spacing:2px;margin:0;line-height:1;">PERANG PETASAN</h1>
+          <p id="overlay-status" style="opacity:.8;font-size:14px;margin-top:8px;">Kumpulkan teman, buat party, dan main bareng!</p>
         </div>
-        <div style="display:flex;gap:10px;">
-          <input id="lobby-code" maxlength="4" placeholder="KODE" style="flex:1;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:18px;text-transform:uppercase;letter-spacing:4px;text-align:center;font-weight:700;" />
-          <button id="btn-join" type="button" style="padding:12px 18px;border:0;border-radius:12px;background:#4fc3f7;color:#111;font-weight:800;font-size:16px;cursor:pointer;">Gabung</button>
+
+        <div id="lobby-main">
+          <label style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Nama Pemain</label>
+          <input id="lobby-name" maxlength="24" placeholder="Pemain" style="width:100%;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:16px;margin-bottom:14px;" />
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+            <button id="btn-host" type="button" style="padding:14px;border:0;border-radius:14px;background:linear-gradient(180deg,#ffe082,#ffca28);color:#111;font-weight:900;font-size:16px;cursor:pointer;">🎉 Buat Party</button>
+            <button id="btn-solo" type="button" style="padding:14px;border:0;border-radius:14px;background:#334155;color:#fff;font-weight:800;font-size:16px;cursor:pointer;">Main Solo</button>
+          </div>
+          <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px;">
+            <div style="font-size:13px;opacity:.8;margin-bottom:8px;">Gabung Party Teman</div>
+            <div style="display:flex;gap:10px;">
+              <input id="lobby-code" maxlength="4" placeholder="KODE" style="flex:1;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:20px;text-transform:uppercase;letter-spacing:5px;text-align:center;font-weight:800;" />
+              <button id="btn-join" type="button" style="padding:12px 20px;border:0;border-radius:12px;background:#4fc3f7;color:#111;font-weight:900;font-size:16px;cursor:pointer;">Gabung</button>
+            </div>
+          </div>
+          <p id="lobby-msg" style="min-height:20px;margin-top:12px;font-size:13px;text-align:center;color:#ffb4b4;"></p>
         </div>
-        <p id="lobby-msg" style="min-height:20px;margin-top:12px;font-size:13px;text-align:center;color:#ffb4b4;"></p>
+
+        <div id="party-panel" style="display:none;">
+          <div style="background:rgba(255,213,79,0.1);border:1px solid rgba(255,213,79,0.25);border-radius:14px;padding:14px;text-align:center;margin-bottom:14px;">
+            <div style="font-size:12px;opacity:.8;margin-bottom:4px;">KODE PARTY</div>
+            <div id="party-code" style="font-size:36px;letter-spacing:6px;font-weight:900;color:#ffd54f;">----</div>
+            <div id="party-url" style="font-size:12px;opacity:.7;margin-top:6px;word-break:break-all;"></div>
+          </div>
+          <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px;margin-bottom:14px;">
+            <div style="font-size:13px;opacity:.8;margin-bottom:8px;">Pemain di Party</div>
+            <div id="party-players" style="display:flex;flex-direction:column;gap:6px;font-size:14px;"></div>
+          </div>
+          <div id="party-actions" style="display:flex;gap:10px;">
+            <button id="btn-party-start" type="button" style="flex:1;padding:14px;border:0;border-radius:14px;background:linear-gradient(180deg,#81c784,#4caf50);color:#111;font-weight:900;font-size:16px;cursor:pointer;">Mulai Main</button>
+          </div>
+          <p id="party-msg" style="min-height:20px;margin-top:10px;font-size:13px;text-align:center;color:#9bf6a3;"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="touch-controls" aria-label="Kontrol game">
+      <div id="tc-joy-zone">
+        <div id="tc-joy-base"><div id="tc-joy-knob"></div></div>
+      </div>
+      <div id="tc-actions">
+        <div class="tc-cluster">
+          <button id="tc-bomb" class="tc-btn tc-skill" data-action="bomb"><span class="lbl">BOM</span><span class="sub">PETASAN</span></button>
+          <button id="tc-grab" class="tc-btn tc-skill" data-action="grabThrow"><span class="lbl">GRAB</span><span class="sub">ANGKAT</span></button>
+          <button id="tc-jump" class="tc-btn tc-skill" data-action="jump"><span class="lbl">JUMP</span><span class="sub">LOMPAT</span></button>
+          <button id="tc-punch" class="tc-btn tc-attack" data-action="punch"><span class="lbl">TINJU</span><span class="sub">ATTACK</span></button>
+        </div>
       </div>
     </div>
 
