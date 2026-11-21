@@ -8,8 +8,6 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /health
-    domains:
-      - petasan.yondarprojects.my.id
     envVars:
       - key: NODE_VERSION
         value: "22"

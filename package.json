@@ -1,43 +1,24 @@
 {
-  "name": "perang-petasan-web",
+  "name": "perang-petasan",
   "version": "0.1.0",
   "private": true,
-  "description": "Perang Petasan: Fighting PvP 2D side-view - browser multiplayer bertema kampung",
+  "type": "module",
   "workspaces": [
-    "shared",
-    "server",
-    "client",
-    "worker"
+    "client"
   ],
   "scripts": {
-    "build": "npm run build:shared && npm run build -w @pp/server && npm run build -w @pp/client",
-    "build:shared": "npm run build -w @pp/shared",
-    "build:server": "npm run build -w @pp/server",
-    "build:client": "npm run build -w @pp/client",
-    "build:worker": "npm run build:shared && npm run build -w @pp/client",
-    "assets:process": "node scripts/process-assets.mjs",
-    "assets:skills": "node scripts/generate-skill-atlas.mjs",
-    "assets:characters": "node scripts/generate-character-sprites.mjs",
-    "assets:stage": "node scripts/generate-stage.mjs",
-    "assets:all": "npm run assets:process && npm run assets:stage && npm run assets:characters && npm run assets:skills",
-    "dev": "npm run build:shared && concurrently -k -n client,worker -c magenta,cyan \"npm run build -w @pp/client -- --watch\" \"npm run dev -w @pp/worker\"",
-    "dev:server": "npm run build:shared && npm run dev -w @pp/server",
-    "dev:client": "npm run build:shared && npm run dev -w @pp/client",
-    "start": "npm run start -w @pp/server",
-    "deploy:cloudflare": "npm run build:worker && npm run deploy -w @pp/worker",
-    "deploy:koyeb": "koyeb deploy . perang-petasan/arena --archive-builder docker --archive-ignore-dir dist --ports 8080:http --routes /:8080 --checks 8080:http:/health --wait",
-    "typecheck": "npm run typecheck -w @pp/shared && npm run typecheck -w @pp/server && npm run typecheck -w @pp/client && npm run typecheck -w @pp/worker"
+    "dev": "npm run dev -w client",
+    "build": "npm run build -w client",
+    "preview": "npm run preview -w client",
+    "server": "node server/index.js",
+    "dev:host": "node server/index.js",
+    "start": "node server/index.js"
   },
-  "devDependencies": {
-    "concurrently": "^9.2.1",
-    "sharp": "^0.35.5",
-    "typescript": "^5.9.3"
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
   },
   "engines": {
-    "node": ">=22"
-  },
-  "allowScripts": {
-    "esbuild@0.28.2": true,
-    "msgpackr-extract@3.0.7": true
+    "node": ">=20.19.0"
   }
 }

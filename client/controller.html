@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#111827" />
+    <title>Perang Petasan - Controller</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+      html, body {
+        width: 100%; height: 100%; overflow: hidden; background: #0b1020; color: #fff;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        touch-action: none; user-select: none; -webkit-user-select: none;
+      }
+      body { position: fixed; inset: 0; }
+      button, input { font: inherit; }
+      .screen { position: absolute; inset: 0; display: none; padding: 16px; }
+      .screen.active { display: flex; }
+      #join-screen {
+        flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        background: radial-gradient(circle at top, #1d3557, #0b1020 65%);
+      }
+      .card {
+        width: min(420px, 100%); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 18px; padding: 20px; backdrop-filter: blur(8px);
+      }
+      h1 { font-size: 28px; letter-spacing: 2px; text-align: center; margin-bottom: 4px; }
+      .sub { text-align: center; opacity: .8; font-size: 14px; margin-bottom: 18px; }
+      label { display: block; font-size: 13px; opacity: .85; margin-bottom: 6px; }
+      input {
+        width: 100%; padding: 14px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.18);
+        background: rgba(0,0,0,0.25); color: #fff; font-size: 18px; margin-bottom: 14px;
+      }
+      #room-code { text-transform: uppercase; letter-spacing: 4px; font-weight: 700; text-align: center; }
+      .join-btn {
+        width: 100%; padding: 14px; border-radius: 12px; border: 0; background: #ffd54f; color: #111;
+        font-weight: 800; font-size: 18px; cursor: pointer;
+      }
+      .join-btn:active { transform: scale(.98); }
+      #join-status { min-height: 22px; margin-top: 12px; font-size: 14px; text-align: center; color: #ffb4b4; }
+      #join-status.ok { color: #9bf6a3; }
+
+      #pad-screen { flex-direction: column; padding: 10px; gap: 8px; }
+      #topbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06);
+        font-size: 14px;
+      }
+      #topbar b { color: #ffd54f; }
+      #status-dot { width: 10px; height: 10px; border-radius: 50%; background: #4caf50; display: inline-block; margin-right: 6px; }
+      #pad-area {
+        flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 4px;
+      }
+      .panel {
+        border-radius: 18px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+        position: relative; min-height: 0; overflow: hidden;
+      }
+      #joystick-panel { display: flex; align-items: center; justify-content: center; }
+      #joy-base {
+        width: min(58vw, 260px); aspect-ratio: 1; max-width: 260px; max-height: 260px;
+        border-radius: 50%; background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.14);
+        position: relative; touch-action: none;
+      }
+      #joy-knob {
+        width: 38%; aspect-ratio: 1; border-radius: 50%; position: absolute; left: 50%; top: 50%;
+        transform: translate(-50%, -50%); background: radial-gradient(circle at 30% 30%, #8ecae6, #219ebc);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.35); pointer-events: none;
+      }
+      #joy-label { position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 12px; opacity: .65; }
+
+      #buttons-panel {
+        display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px; padding: 14px;
+      }
+      .action-btn {
+        border: 0; border-radius: 18px; color: #111; font-weight: 900; font-size: clamp(16px, 2.8vw, 28px);
+        letter-spacing: 0.5px; box-shadow: 0 8px 0 rgba(0,0,0,0.25); cursor: pointer; touch-action: none;
+      }
+      .action-btn:active, .action-btn.active { transform: translateY(4px); box-shadow: 0 4px 0 rgba(0,0,0,0.25); filter: brightness(1.05); }
+      #btn-jump { background: #8be9a8; }
+      #btn-punch { background: #ff8a80; }
+      #btn-grab { background: #82b1ff; }
+      #btn-bomb { background: #ffd54f; }
+
+      @media (orientation: portrait) {
+        #pad-area { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+        #joy-base { width: min(62vw, 280px); max-width: 280px; max-height: 280px; }
+      }
+      @media (max-height: 420px) {
+        #topbar { padding: 6px 10px; font-size: 12px; }
+        .action-btn { font-size: 16px; border-radius: 14px; }
+      }
+    </style>
+  </head>
+  <body>
+    <section id="join-screen" class="screen active">
+      <div class="card">
+        <h1>PERANG PETASAN</h1>
+        <div class="sub">Controller HP</div>
+        <label for="room-code">Kode Room (4 huruf)</label>
+        <input id="room-code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" />
+        <label for="player-name">Nama Pemain (opsional)</label>
+        <input id="player-name" maxlength="24" autocomplete="off" placeholder="Pemain" />
+        <button id="join-btn" class="join-btn">Gabung</button>
+        <div id="join-status"></div>
+      </div>
+    </section>
+
+    <section id="pad-screen" class="screen">
+      <div id="topbar">
+        <div><span id="status-dot"></span><b id="room-label">ROOM</b> <span id="name-label"></span></div>
+        <div id="net-label">terhubung</div>
+      </div>
+      <div id="pad-area">
+        <div id="joystick-panel" class="panel">
+          <div id="joy-base">
+            <div id="joy-knob"></div>
+            <div id="joy-label">JOYSTICK</div>
+          </div>
+        </div>
+        <div id="buttons-panel" class="panel">
+          <button id="btn-jump" class="action-btn" data-action="jump">LOMPAT</button>
+          <button id="btn-punch" class="action-btn" data-action="punch">TINJU</button>
+          <button id="btn-grab" class="action-btn" data-action="grabThrow">ANGKAT</button>
+          <button id="btn-bomb" class="action-btn" data-action="bomb">PETASAN</button>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      (() => {
+        const qs = new URLSearchParams(location.search);
+        const serverParam = qs.get('server');
+        const defaultServer = location.port === '3001' ? location.origin : `${location.protocol}//${location.hostname}:3001`;
+        const serverUrl = (serverParam || defaultServer).replace(/\/$/, '');
+
+        const joinScreen = document.getElementById('join-screen');
+        const padScreen = document.getElementById('pad-screen');
+        const roomInput = document.getElementById('room-code');
+        const nameInput = document.getElementById('player-name');
+        const joinBtn = document.getElementById('join-btn');
+        const joinStatus = document.getElementById('join-status');
+        const roomLabel = document.getElementById('room-label');
+        const nameLabel = document.getElementById('name-label');
+        const netLabel = document.getElementById('net-label');
+
+        const state = { moveX: 0, moveZ: 0, jump: false, punch: false, grabThrow: false, bombHeld: false };
+        let socket = null;
+        let joined = false;
+        let sendTimer = null;
+        let lastSent = '';
+
+        function setStatus(msg, ok = false) {
+          joinStatus.textContent = msg || '';
+          joinStatus.className = ok ? 'ok' : '';
+        }
+
+        function loadSocketIO() {
+          return new Promise((resolve, reject) => {
+            if (window.io) return resolve(window.io);
+            const s = document.createElement('script');
+            s.src = `${serverUrl}/socket.io/socket.io.js`;
+            s.onload = () => window.io ? resolve(window.io) : reject(new Error('socket.io client tidak tersedia'));
+            s.onerror = () => reject(new Error(`Gagal memuat socket.io dari ${serverUrl}. Pastikan server berjalan.`));
+            document.head.appendChild(s);
+          });
+        }
+
+        function emitInput(force = false) {
+          if (!socket || !joined) return;
+          const payload = { state: { ...state } };
+          const json = JSON.stringify(payload.state);
+          if (!force && json === lastSent) return;
+          lastSent = json;
+          socket.emit('player-input', payload);
+        }
+
+        function startSendLoop() {
+          stopSendLoop();
+          sendTimer = setInterval(() => emitInput(false), 50); // 20Hz
+        }
+        function stopSendLoop() {
+          if (sendTimer) { clearInterval(sendTimer); sendTimer = null; }
+        }
+
+        function connectAndJoin() {
+          const roomCode = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+          const name = nameInput.value.trim().slice(0, 24);
+          roomInput.value = roomCode;
+          if (roomCode.length !== 4) { setStatus('Masukkan kode room 4 huruf.'); return; }
+
+          setStatus('Menghubungkan...', true);
+          joinBtn.disabled = true;
+          loadSocketIO().then((io) => {
+            if (socket) socket.disconnect();
+            socket = io(serverUrl, { transports: ['websocket', 'polling'] });
+            socket.on('connect', () => {
+              setStatus('Terhubung, bergabung ke room...', true);
+              socket.emit('join-room', { roomCode, name }, (res) => {
+                if (res && res.ok) handleJoined(res);
+              });
+            });
+            socket.on('joined-room', handleJoined);
+            socket.on('join-error', (err) => {
+              setStatus(err?.message || 'Gagal bergabung ke room.');
+              joinBtn.disabled = false;
+            });
+            socket.on('disconnect', () => {
+              netLabel.textContent = 'terputus';
+              if (joined) setStatus('Koneksi terputus.');
+            });
+            socket.on('room-closed', () => {
+              netLabel.textContent = 'room ditutup';
+              setStatus('Room ditutup oleh host.');
+            });
+            socket.on('connect_error', (err) => {
+              setStatus(`Gagal konek: ${err?.message || err}`);
+              joinBtn.disabled = false;
+            });
+          }).catch((err) => {
+            setStatus(err.message || String(err));
+            joinBtn.disabled = false;
+          });
+        }
+
+        function handleJoined(res) {
+          if (joined) return;
+          joined = true;
+          roomLabel.textContent = res.roomCode;
+          nameLabel.textContent = res.name ? `• ${res.name}` : '';
+          joinScreen.classList.remove('active');
+          padScreen.classList.add('active');
+          netLabel.textContent = 'terhubung';
+          startSendLoop();
+          emitInput(true);
+        }
+
+        roomInput.addEventListener('input', () => {
+          roomInput.value = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+        });
+        joinBtn.addEventListener('click', connectAndJoin);
+
+        // --- Joystick --------------------------------------------------------
+        const joyBase = document.getElementById('joy-base');
+        const joyKnob = document.getElementById('joy-knob');
+        let joyPointer = null;
+        let joyCenter = { x: 0, y: 0 };
+        let joyRadius = 1;
+
+        function resetJoystick() {
+          state.moveX = 0; state.moveZ = 0;
+          joyKnob.style.transform = 'translate(-50%, -50%)';
+          emitInput(true);
+        }
+
+        function updateJoystick(clientX, clientY) {
+          const dx = clientX - joyCenter.x;
+          const dy = clientY - joyCenter.y;
+          const dist = Math.hypot(dx, dy);
+          const max = joyRadius * 0.38;
+          const clamped = dist > max ? max / dist : 1;
+          const kx = dx * clamped;
+          const ky = dy * clamped;
+          joyKnob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+          state.moveX = Math.max(-1, Math.min(1, kx / max));
+          // Atas joystick = maju (moveZ positif), bawah = mundur.
+          state.moveZ = Math.max(-1, Math.min(1, -ky / max));
+          emitInput(false);
+        }
+
+        joyBase.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          joyPointer = e.pointerId;
+          joyBase.setPointerCapture(e.pointerId);
+          const r = joyBase.getBoundingClientRect();
+          joyCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+          joyRadius = r.width / 2;
+          updateJoystick(e.clientX, e.clientY);
+        });
+        joyBase.addEventListener('pointermove', (e) => {
+          if (e.pointerId !== joyPointer) return;
+          e.preventDefault();
+          updateJoystick(e.clientX, e.clientY);
+        });
+        function joyEnd(e) {
+          if (e.pointerId !== joyPointer) return;
+          joyPointer = null;
+          resetJoystick();
+        }
+        joyBase.addEventListener('pointerup', joyEnd);
+        joyBase.addEventListener('pointercancel', joyEnd);
+
+        // --- Buttons ---------------------------------------------------------
+        function bindActionButton(el, downFn, upFn) {
+          let pointer = null;
+          el.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            pointer = e.pointerId;
+            el.setPointerCapture?.(e.pointerId);
+            el.classList.add('active');
+            downFn();
+            emitInput(true);
+          });
+          const end = (e) => {
+            if (pointer !== null && e.pointerId !== pointer) return;
+            pointer = null;
+            el.classList.remove('active');
+            upFn();
+            emitInput(true);
+          };
+          el.addEventListener('pointerup', end);
+          el.addEventListener('pointercancel', end);
+          el.addEventListener('pointerleave', (e) => { if (pointer !== null && e.pointerId === pointer) end(e); });
+        }
+
+        bindActionButton(document.getElementById('btn-jump'), () => { state.jump = true; }, () => { state.jump = false; });
+        bindActionButton(document.getElementById('btn-punch'), () => { state.punch = true; }, () => { state.punch = false; });
+        bindActionButton(document.getElementById('btn-grab'), () => { state.grabThrow = true; }, () => { state.grabThrow = false; });
+        bindActionButton(document.getElementById('btn-bomb'), () => { state.bombHeld = true; }, () => { state.bombHeld = false; });
+
+        // Prevent scroll/zoom gestures
+        document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
+        document.addEventListener('touchmove', (e) => { if (joined) e.preventDefault(); }, { passive: false });
+      })();
+    </script>
+  </body>
+</html>

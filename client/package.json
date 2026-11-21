@@ -1,20 +1,19 @@
 {
-  "name": "@pp/client",
+  "name": "perang-petasan-client",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.json --noEmit && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@pp/shared": "0.1.0"
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "socket.io-client": "^4.8.3",
+    "three": "^0.187.0"
   },
   "devDependencies": {
-    "@types/node": "^22.19.0",
-    "typescript": "^5.9.3",
     "vite": "^8.3.8"
   }
 }

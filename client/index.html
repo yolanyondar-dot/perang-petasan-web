@@ -2,13 +2,235 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#10261a" />
-    <meta name="description" content="Perang Petasan: Arena PvP 2D bergaya kartun kampung — 11 hero, skill MOBA, 3v3/5v5/10v10, menang dari skor kill." />
-    <title>Perang Petasan: Arena PvP 2D</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1020" />
+    <title>perang-petasan</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0b1020;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      #app canvas {
+        display: block;
+      }
+      #overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        background: #0b1020;
+        color: #fff;
+        transition: opacity 0.35s ease;
+      }
+      #overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #overlay h1 {
+        font-size: clamp(24px, 5vw, 40px);
+        letter-spacing: 4px;
+      }
+      #overlay p {
+        opacity: 0.7;
+        font-size: 14px;
+      }
+      #hud {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        z-index: 5;
+        padding: 10px 14px;
+        border-radius: 10px;
+        background: rgba(8, 12, 24, 0.55);
+        color: #fff;
+        font-size: 13px;
+        line-height: 1.6;
+        pointer-events: none;
+        backdrop-filter: blur(4px);
+      }
+      #hud b {
+        color: #ffd54f;
+      }
+      #room-info {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 6;
+        padding: 10px 14px;
+        border-radius: 10px;
+        background: rgba(8, 12, 24, 0.62);
+        color: #fff;
+        font-size: 13px;
+        line-height: 1.5;
+        backdrop-filter: blur(4px);
+        max-width: min(360px, calc(100vw - 24px));
+      }
+      #room-info .code { font-size: 24px; font-weight: 800; letter-spacing: 3px; color: #ffd54f; }
+      #room-info .muted { opacity: .75; font-size: 12px; word-break: break-word; }
+      #room-actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+      #room-actions button {
+        pointer-events: auto; cursor: pointer; border: 0; border-radius: 8px; padding: 7px 10px;
+        font-size: 12px; font-weight: 700; color: #111; background: #ffd54f;
+      }
+      #room-actions button.secondary { background: #d0d7e2; }
+      #powerup-hud { margin-top: 4px; color: #ffe082; font-size: 12px; min-height: 18px; }
+      .select-row { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .select-row label { display:block; font-size:11px; opacity:.8; margin-bottom:2px; }
+      .select-row select { width:100%; pointer-events:auto; border-radius:8px; border:1px solid rgba(255,255,255,.15); background:#182033; color:#fff; padding:6px 8px; font-size:12px; }
+      #mode-status { margin-top:6px; font-size:12px; color:#b3e5fc; min-height:18px; }
+      #round-hud {
+        position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6;
+        padding: 10px 14px; border-radius: 10px; background: rgba(8,12,24,.62); color:#fff;
+        font-size: 13px; line-height: 1.45; backdrop-filter: blur(4px); text-align:center;
+        min-width: min(520px, calc(100vw - 24px)); max-width: calc(100vw - 24px);
+      }
+      #round-hud b { color: #ffd54f; }
+      #round-hud .lives { font-size: 12px; opacity: .92; margin-top: 4px; white-space: pre-wrap; }
+      #round-banner, #podium {
+        position: fixed; inset: 0; z-index: 12; display: none; align-items: center; justify-content: center;
+        background: rgba(5,8,16,0.45); color: #fff; backdrop-filter: blur(2px);
+      }
+      #round-banner.show, #podium.show { display: flex; }
+      .panel {
+        background: rgba(10,16,30,0.88); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px;
+        padding: 24px 28px; text-align: center; min-width: min(520px, calc(100vw - 32px));
+        box-shadow: 0 20px 50px rgba(0,0,0,.35);
+      }
+      .panel h2 { font-size: clamp(28px,5vw,44px); letter-spacing: 2px; color:#ffd54f; margin-bottom: 8px; }
+      .panel p { opacity: .85; margin-bottom: 10px; }
+      .panel table { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 14px; }
+      .panel td, .panel th { padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,.12); text-align:left; }
+      .panel th { color:#ffd54f; font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+      .panel button { pointer-events:auto; cursor:pointer; border:0; border-radius:10px; padding:10px 16px; font-weight:800; background:#ffd54f; color:#111; }
+      #mute-btn { pointer-events:auto; }
+      #tuning-toggle {
+        position: fixed; left: 12px; top: 12px; z-index: 7;
+        pointer-events: auto; cursor: pointer; border: 0; border-radius: 8px;
+        padding: 7px 10px; font-size: 12px; font-weight: 700; color: #111; background: #ffd54f;
+        box-shadow: 0 4px 14px rgba(0,0,0,.25);
+      }
+      #tuning-drawer {
+        position: fixed; left: 12px; top: 48px; z-index: 7; width: min(320px, calc(100vw - 24px));
+        padding: 12px 14px; border-radius: 12px; background: rgba(8,12,24,0.82); color: #fff;
+        backdrop-filter: blur(6px); font-size: 12px; line-height: 1.4; display: none;
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+      #tuning-drawer.open { display: block; }
+      #tuning-drawer h3 { font-size: 13px; color: #ffd54f; margin-bottom: 8px; letter-spacing: .5px; }
+      .tune-row { margin-bottom: 8px; }
+      .tune-row label { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 2px; opacity: .95; }
+      .tune-row output { color: #ffd54f; font-variant-numeric: tabular-nums; }
+      .tune-row input[type="range"] { width: 100%; accent-color: #ffd54f; cursor: pointer; }
+      #tuning-reset {
+        width: 100%; margin-top: 4px; pointer-events: auto; cursor: pointer; border: 0; border-radius: 8px;
+        padding: 8px 10px; font-size: 12px; font-weight: 700; color: #111; background: #d0d7e2;
+      }
+    </style>
   </head>
   <body>
-    <div id="game"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="app"></div>
+
+    <div id="hud">
+      <b>PERANG PETASAN</b><br />
+      WASD / Panah: bergerak &middot; Space: lompat &middot; F / Klik Kanan: tinju<br />
+      E / Klik Kiri: tahan sumbu, lepas lempar &middot; Q / Shift: angkat &amp; lempar<br />
+      <span id="hud-stats">memuat…</span>
+    </div>
+
+    <div id="round-hud">
+      <div><b id="round-title">Ronde 1 / 3</b></div>
+      <div class="lives" id="lives-hud">memuat…</div>
+      <div id="mode-status"></div>
+    </div>
+
+    <div id="room-info">
+      <div><b>COUCH MULTIPLAYER</b></div>
+      <div class="muted">Room: <span id="room-code" class="code">----</span></div>
+      <div class="muted" id="room-url">Menghubungkan server...</div>
+      <div class="select-row">
+        <div>
+          <label for="arena-select">Arena</label>
+          <select id="arena-select">
+            <option value="alun_alun">Alun-Alun</option>
+            <option value="tangga_tinggi">Tangga Tinggi</option>
+            <option value="jembatan_chaos">Jembatan Chaos</option>
+          </select>
+        </div>
+        <div>
+          <label for="mode-select">Mode</label>
+          <select id="mode-select">
+            <option value="ffa">Free-For-All</option>
+            <option value="koth">King of the Hill</option>
+            <option value="ctf">Capture the Flag</option>
+          </select>
+        </div>
+      </div>
+      <div id="room-actions">
+        <button id="btn-add-bot" type="button">Tambah Bot</button>
+        <button id="btn-clear-bots" type="button" class="secondary">Hapus Semua Bot</button>
+        <button id="btn-mute" type="button" class="secondary">Mute</button>
+      </div>
+      <div id="powerup-hud"></div>
+    </div>
+
+    <button id="tuning-toggle" type="button">Tuning Fisika</button>
+    <div id="tuning-drawer" aria-hidden="true">
+      <h3>TUNING FISIKA</h3>
+      <div class="tune-row">
+        <label for="tune-gravity">Gravitasi <output id="val-gravity"></output></label>
+        <input id="tune-gravity" type="range" min="-35" max="-8" step="0.5" />
+      </div>
+      <div class="tune-row">
+        <label for="tune-explosion">Kekuatan Ledakan <output id="val-explosion"></output></label>
+        <input id="tune-explosion" type="range" min="4" max="30" step="0.5" />
+      </div>
+      <div class="tune-row">
+        <label for="tune-radius">Radius Ledakan <output id="val-radius"></output></label>
+        <input id="tune-radius" type="range" min="2" max="9" step="0.1" />
+      </div>
+      <div class="tune-row">
+        <label for="tune-throw">Kecepatan Lempar <output id="val-throw"></output></label>
+        <input id="tune-throw" type="range" min="6" max="26" step="0.5" />
+      </div>
+      <div class="tune-row">
+        <label for="tune-knockout">Durasi Knockout <output id="val-knockout"></output></label>
+        <input id="tune-knockout" type="range" min="0.5" max="4" step="0.1" />
+      </div>
+      <div class="tune-row">
+        <label for="tune-friction">Friction Arena <output id="val-friction"></output></label>
+        <input id="tune-friction" type="range" min="0" max="1.5" step="0.05" />
+      </div>
+      <button id="tuning-reset" type="button">Reset Default</button>
+    </div>
+
+    <div id="round-banner"><div class="panel"><h2 id="round-banner-title">Ronde Selesai</h2><p id="round-banner-sub"></p></div></div>
+    <div id="podium"><div class="panel"><h2>Papan Skor Akhir</h2><p id="podium-sub">Pertandingan selesai</p><div id="podium-table"></div><button id="btn-play-again" type="button">Main Lagi</button></div></div>
+
+    <div id="overlay">
+      <h1>PERANG PETASAN</h1>
+      <p>Memuat fisika &amp; arena…</p>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
