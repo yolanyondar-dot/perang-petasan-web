@@ -671,7 +671,8 @@ async function bootstrap() {
       if (typeof state.round === 'number') roundIndex = state.round;
       if (typeof state.matchOver === 'boolean') matchOver = state.matchOver;
       if (typeof state.roundOver === 'boolean') roundOver = state.roundOver;
-      if (state.started) {
+      // compat: old host doesn't send started; any game-state means host is running
+      if (state.started || state.started === undefined) {
         gameStarted = true;
         overlay?.classList.add('hidden');
       }
