@@ -43,14 +43,14 @@ function getHostOriginOverride() {
     return u.origin;
   } catch (_) { return ''; }
 }
-function getControllerShareUrl(roomCode) {
+function getJoinShareUrl(roomCode) {
   const code = String(roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
   const origin = getHostOriginOverride() || window.location.origin;
-  return `${origin}/controller.html?room=${encodeURIComponent(code)}`;
+  return `${origin}/?room=${encodeURIComponent(code)}`;
 }
 async function renderPartyQr(roomCode) {
   const code = String(roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
-  const url = code ? getControllerShareUrl(code) : '';
+  const url = code ? getJoinShareUrl(code) : '';
   if (partyUrlEl) partyUrlEl.textContent = url || '';
   if (partyQrEl) {
     const ctx = partyQrEl.getContext('2d');
@@ -68,7 +68,7 @@ partyHostOriginEl?.addEventListener('input', () => {
 });
 btnCopyController?.addEventListener('click', async () => {
   const code = network?.roomCode || partyCodeEl?.textContent || '';
-  const url = getControllerShareUrl(code);
+  const url = getJoinShareUrl(code);
   if (!/room=/.test(url) || !code || code.includes('-')) return;
   try { await navigator.clipboard.writeText(url); if (partyMsgEl) { partyMsgEl.textContent = 'Link controller disalin!'; partyMsgEl.style.color = '#9bf6a3'; } }
   catch (_) { window.prompt('Salin link controller:', url); }
@@ -147,15 +147,33 @@ function waitForLobby() {
     function setMsg(msg, ok = false) { if (lobbyMsg) { lobbyMsg.textContent = msg || ''; lobbyMsg.style.color = ok ? '#9bf6a3' : '#ffb4b4'; } }
     function cleanCode(v) { return (v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); }
     lobbyCode?.addEventListener('input', () => { lobbyCode.value = cleanCode(lobbyCode.value); });
-    btnSolo?.addEventListener('click', () => { const p = currentProfile(); saveProfile(p); resolve({ mode: 'solo', ...p }); }, { once: true });
-    btnHost?.addEventListener('click', () => { const p = currentProfile(); saveProfile(p); resolve({ mode: 'host', ...p }); }, { once: true });
+    let resolved = false;
+    const resolveOnce = (v) => { if (resolved) return; resolved = true; resolve(v); };
+    btnSolo?.addEventListener('click', () => { const p = currentProfile(); saveProfile(p); resolveOnce({ mode: 'solo', ...p }); }, { once: true });
+    btnHost?.addEventListener('click', () => { const p = currentProfile(); saveProfile(p); resolveOnce({ mode: 'host', ...p }); }, { once: true });
     btnJoin?.addEventListener('click', () => {
       const code = cleanCode(lobbyCode?.value || '');
       if (lobbyCode) lobbyCode.value = code;
       if (code.length !== 4) { setMsg('Masukkan kode room 4 huruf.'); return; }
       const p = currentProfile(); saveProfile(p);
-      resolve({ mode: 'join', ...p, roomCode: code });
+      resolveOnce({ mode: 'join', ...p, roomCode: code });
     });
+
+    // Auto-join dari link ?room=CODE (mabar di layar sendiri)
+    const roomFromUrl = cleanCode(new URLSearchParams(location.search).get('room') || '');
+    if (roomFromUrl.length === 4) {
+      if (lobbyCode) lobbyCode.value = roomFromUrl;
+      const hadSavedName = !!(profile.name && profile.name.trim());
+      if (hadSavedName) {
+        setMsg('Kode room terisi dari link. Menggabungkan...', true);
+        setTimeout(() => {
+          const p = currentProfile(); saveProfile(p);
+          resolveOnce({ mode: 'join', ...p, roomCode: roomFromUrl });
+        }, 250);
+      } else {
+        setMsg('Kode room terisi dari link. Isi nama lalu tekan Gabung.', true);
+      }
+    }
   });
 }
 
@@ -803,10 +821,10 @@ async function bootstrap() {
 
   const network = createNetwork({
     onRoomCreated: ({ roomCode }) => {
-      const shareUrl = getControllerShareUrl(roomCode);
+      const shareUrl = getJoinShareUrl(roomCode);
       if (roomCodeEl) roomCodeEl.textContent = roomCode;
       if (roomUrlEl) {
-        roomUrlEl.innerHTML = `Kode room: <b>${roomCode}</b><br>Buka <b>${shareUrl}</b> di HP (Wi-Fi sama)<br><span class="muted">Mode: online host</span>`;
+        roomUrlEl.innerHTML = `Kode room: <b>${roomCode}</b><br>Buka <b>${shareUrl}</b> di perangkat lain untuk gabung<br><span class="muted">Mode: online host</span>`;
       }
       if (isOnlineHost) {
         if (overlayStatus) overlayStatus.textContent = 'Party dibuat! Bagikan kode ke teman.';
@@ -820,7 +838,7 @@ async function bootstrap() {
       if (isOnlineClient) {
         localPlayerId = msg.playerId || msg.controllerId || localPlayerId;
         const code = msg.roomCode || lobby.roomCode || '-';
-        const shareUrl = getControllerShareUrl(code);
+        const shareUrl = getJoinShareUrl(code);
         if (roomCodeEl) roomCodeEl.textContent = code;
         if (roomUrlEl) roomUrlEl.innerHTML = `Terhubung ke room <b>${code}</b><br><span class="muted">Mode: online player</span>`;
         if (overlayStatus) overlayStatus.textContent = 'Terhubung! Menunggu game...';
