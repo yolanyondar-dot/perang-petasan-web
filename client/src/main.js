@@ -960,6 +960,48 @@ async function bootstrap() {
   bindTcBtn('tc-bomb', () => { touchBomb = true; if (!isOnlineClient) trySpawnAndHold(); }, () => { touchBomb = false; if (!isOnlineClient) tryThrowHeld(); });
   showTouchControls(true);
 
+  // --- Control layout settings ---------------------------------------------
+  const ctlBtn = document.getElementById('controls-settings-btn');
+  const ctlPanel = document.getElementById('controls-settings');
+  const ctlJoy = document.getElementById('ctl-joy-size');
+  const ctlBtnSize = document.getElementById('ctl-btn-size');
+  const ctlBottom = document.getElementById('ctl-bottom');
+  const ctlSide = document.getElementById('ctl-side');
+  const ctlReset = document.getElementById('ctl-reset');
+  const ctlClose = document.getElementById('ctl-close');
+  const CTL_KEY = 'pp_touch_layout_v1';
+  function applyControlLayout(cfg) {
+    const joy = Math.max(90, Math.min(220, Number(cfg.joy) || 150));
+    const btn = Math.max(70, Math.min(140, Number(cfg.btn) || 100));
+    const bottom = Math.max(0, Math.min(80, Number(cfg.bottom) || 24));
+    const side = Math.max(0, Math.min(80, Number(cfg.side) || 24));
+    const joyBase = document.getElementById('tc-joy-base');
+    const cluster = document.querySelector('.tc-cluster');
+    const joyZone = document.getElementById('tc-joy-zone');
+    const actZone = document.getElementById('tc-actions');
+    if (joyBase) { joyBase.style.width = joy + 'px'; joyBase.style.maxWidth = joy + 'px'; }
+    if (cluster) { cluster.style.width = Math.round(joy * 1.35) + 'px'; cluster.style.maxWidth = Math.round(joy * 1.35) + 'px'; }
+    if (joyZone) { joyZone.style.padding = `0 0 ${bottom}px ${side}px`; }
+    if (actZone) { actZone.style.padding = `0 ${side}px ${bottom}px 0`; }
+    document.querySelectorAll('.tc-skill').forEach((el) => { el.style.width = Math.round(btn * 0.25) + '%'; });
+    document.getElementById('tc-punch')?.style.setProperty('width', Math.round(btn * 0.44) + '%');
+    if (ctlJoy) ctlJoy.value = String(joy);
+    if (ctlBtnSize) ctlBtnSize.value = String(btn);
+    if (ctlBottom) ctlBottom.value = String(bottom);
+    if (ctlSide) ctlSide.value = String(side);
+    try { localStorage.setItem(CTL_KEY, JSON.stringify({ joy, btn, bottom, side })); } catch (_) {}
+  }
+  function loadControlLayout() {
+    try { const raw = localStorage.getItem(CTL_KEY); if (raw) return JSON.parse(raw); } catch (_) {}
+    return { joy: 150, btn: 100, bottom: 24, side: 24 };
+  }
+  applyControlLayout(loadControlLayout());
+  ctlBtn?.addEventListener('click', () => { if (ctlPanel) ctlPanel.style.display = ctlPanel.style.display === 'none' ? 'block' : 'none'; });
+  ctlClose?.addEventListener('click', () => { if (ctlPanel) ctlPanel.style.display = 'none'; });
+  ctlReset?.addEventListener('click', () => applyControlLayout({ joy: 150, btn: 100, bottom: 24, side: 24 }));
+  const onCtl = () => applyControlLayout({ joy: ctlJoy?.value, btn: ctlBtnSize?.value, bottom: ctlBottom?.value, side: ctlSide?.value });
+  ctlJoy?.addEventListener('input', onCtl); ctlBtnSize?.addEventListener('input', onCtl); ctlBottom?.addEventListener('input', onCtl); ctlSide?.addEventListener('input', onCtl);
+
   // --- Resize --------------------------------------------------------------
   window.addEventListener('resize', () => {
     const w = window.innerWidth;
@@ -999,8 +1041,10 @@ async function bootstrap() {
     throwCooldown = Math.max(0, throwCooldown - dt);
     for (const entry of remotes.values()) entry.throwCooldown = Math.max(0, entry.throwCooldown - dt);
 
+    const localInput = getLocalInputState();
+    player.setRemoteInput(localInput);
     if (isOnlineClient && network.connected) {
-      network.send({ type: 'player-input', state: getLocalInputState() });
+      network.send({ type: 'player-input', state: localInput });
     }
 
     if (!isOnlineClient) {

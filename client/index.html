@@ -162,13 +162,13 @@
       .select-row select { width:100%; pointer-events:auto; border-radius:8px; border:1px solid rgba(255,255,255,.15); background:#182033; color:#fff; padding:6px 8px; font-size:12px; }
       #mode-status { margin-top:6px; font-size:12px; color:#b3e5fc; min-height:18px; }
       #round-hud {
-        position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6;
-        padding: 10px 14px; border-radius: 10px; background: rgba(8,12,24,.62); color:#fff;
-        font-size: 13px; line-height: 1.45; backdrop-filter: blur(4px); text-align:center;
-        min-width: min(520px, calc(100vw - 24px)); max-width: calc(100vw - 24px);
+        position: fixed; top: 10px; right: 10px; z-index: 6;
+        padding: 8px 10px; border-radius: 10px; background: rgba(8,12,24,.58); color:#fff;
+        font-size: 11px; line-height: 1.35; backdrop-filter: blur(4px); text-align: right;
+        min-width: 140px; max-width: min(240px, calc(100vw - 20px));
       }
-      #round-hud b { color: #ffd54f; }
-      #round-hud .lives { font-size: 12px; opacity: .92; margin-top: 4px; white-space: pre-wrap; }
+      #round-title { color: #ffd54f; font-weight: 800; font-size: 12px; margin-bottom: 2px; }
+      #round-hud .lives { font-size: 11px; opacity: .92; margin-top: 2px; white-space: pre-wrap; }
       #round-banner, #podium {
         position: fixed; inset: 0; z-index: 12; display: none; align-items: center; justify-content: center;
         background: rgba(5,8,16,0.45); color: #fff; backdrop-filter: blur(2px);
@@ -213,78 +213,24 @@
   <body>
     <div id="app"></div>
 
-    <div id="hud">
-      <b>PERANG PETASAN</b><br />
-      Gunakan <b>joystick virtual</b> (kiri) untuk gerak &middot; tombol <b>MOBA</b> (kanan): BOM/GRAB/JUMP/TINJU<br />
-      <span style="opacity:.7">Keyboard tetap didukung: WASD/Space/F/E/Q</span><br />
-      <span id="hud-stats">memuat…</span>
-    </div>
-
     <div id="round-hud">
-      <div><b id="round-title">Ronde 1 / 3</b></div>
-      <div class="lives" id="lives-hud">memuat…</div>
-      <div id="mode-status"></div>
+      <div id="round-title">Ronde 1 / 3</div>
+      <div id="lives-hud" class="lives"></div>
+      <div id="mode-status" class="lives"></div>
     </div>
 
-    <div id="room-info">
-      <div><b>COUCH MULTIPLAYER</b></div>
-      <div class="muted">Room: <span id="room-code" class="code">----</span></div>
-      <div class="muted" id="room-url">Menghubungkan server...</div>
-      <div class="select-row">
-        <div>
-          <label for="arena-select">Arena</label>
-          <select id="arena-select">
-            <option value="alun_alun">Alun-Alun</option>
-            <option value="tangga_tinggi">Tangga Tinggi</option>
-            <option value="jembatan_chaos">Jembatan Chaos</option>
-          </select>
-        </div>
-        <div>
-          <label for="mode-select">Mode</label>
-          <select id="mode-select">
-            <option value="ffa">Free-For-All</option>
-            <option value="koth">King of the Hill</option>
-            <option value="ctf">Capture the Flag</option>
-          </select>
-        </div>
-      </div>
-      <div id="room-actions">
-        <button id="btn-add-bot" type="button">Tambah Bot</button>
-        <button id="btn-clear-bots" type="button" class="secondary">Hapus Semua Bot</button>
-        <button id="btn-mute" type="button" class="secondary">Mute</button>
-      </div>
-      <div id="powerup-hud"></div>
+    <div id="powerup-hud" style="position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;color:#fff;font-size:12px;text-shadow:0 2px 8px rgba(0,0,0,.8);pointer-events:none;"></div>
+
+    <button id="controls-settings-btn" type="button" style="position:fixed;top:10px;left:10px;z-index:9;border:0;border-radius:10px;padding:8px 10px;background:rgba(15,23,42,.7);color:#fff;font-size:14px;cursor:pointer;">⚙️ Kontrol</button>
+    <div id="controls-settings" style="display:none;position:fixed;top:48px;left:10px;z-index:9;width:min(280px,calc(100vw - 20px));background:rgba(15,23,42,.92);color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;font-size:12px;backdrop-filter:blur(4px);">
+      <div style="font-weight:800;color:#ffd54f;margin-bottom:8px;">Atur Kontrol</div>
+      <label>Ukuran Joystick <input id="ctl-joy-size" type="range" min="90" max="220" value="150" style="width:100%"></label>
+      <label>Ukuran Tombol <input id="ctl-btn-size" type="range" min="70" max="140" value="100" style="width:100%"></label>
+      <label>Margin Bawah <input id="ctl-bottom" type="range" min="0" max="80" value="24" style="width:100%"></label>
+      <label>Margin Samping <input id="ctl-side" type="range" min="0" max="80" value="24" style="width:100%"></label>
+      <div style="display:flex;gap:8px;margin-top:8px;"><button id="ctl-reset" type="button" style="flex:1;padding:8px;border:0;border-radius:8px;background:#334155;color:#fff;cursor:pointer;">Reset</button><button id="ctl-close" type="button" style="flex:1;padding:8px;border:0;border-radius:8px;background:#ffd54f;color:#111;cursor:pointer;font-weight:700;">Tutup</button></div>
     </div>
 
-    <button id="tuning-toggle" type="button">Tuning Fisika</button>
-    <div id="tuning-drawer" aria-hidden="true">
-      <h3>TUNING FISIKA</h3>
-      <div class="tune-row">
-        <label for="tune-gravity">Gravitasi <output id="val-gravity"></output></label>
-        <input id="tune-gravity" type="range" min="-35" max="-8" step="0.5" />
-      </div>
-      <div class="tune-row">
-        <label for="tune-explosion">Kekuatan Ledakan <output id="val-explosion"></output></label>
-        <input id="tune-explosion" type="range" min="4" max="30" step="0.5" />
-      </div>
-      <div class="tune-row">
-        <label for="tune-radius">Radius Ledakan <output id="val-radius"></output></label>
-        <input id="tune-radius" type="range" min="2" max="9" step="0.1" />
-      </div>
-      <div class="tune-row">
-        <label for="tune-throw">Kecepatan Lempar <output id="val-throw"></output></label>
-        <input id="tune-throw" type="range" min="6" max="26" step="0.5" />
-      </div>
-      <div class="tune-row">
-        <label for="tune-knockout">Durasi Knockout <output id="val-knockout"></output></label>
-        <input id="tune-knockout" type="range" min="0.5" max="4" step="0.1" />
-      </div>
-      <div class="tune-row">
-        <label for="tune-friction">Friction Arena <output id="val-friction"></output></label>
-        <input id="tune-friction" type="range" min="0" max="1.5" step="0.05" />
-      </div>
-      <button id="tuning-reset" type="button">Reset Default</button>
-    </div>
 
     <div id="round-banner"><div class="panel"><h2 id="round-banner-title">Ronde Selesai</h2><p id="round-banner-sub"></p></div></div>
     <div id="podium"><div class="panel"><h2>Papan Skor Akhir</h2><p id="podium-sub">Pertandingan selesai</p><div id="podium-table"></div><button id="btn-play-again" type="button">Main Lagi</button></div></div>
@@ -300,6 +246,24 @@
         <div id="lobby-main">
           <label style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Nama Pemain</label>
           <input id="lobby-name" maxlength="24" placeholder="Pemain" style="width:100%;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:16px;margin-bottom:14px;" />
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+            <div>
+              <label for="arena-select" style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Arena</label>
+              <select id="arena-select" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:14px;">
+                <option value="alun_alun">Alun-Alun</option>
+                <option value="tangga_tinggi">Tangga Tinggi</option>
+                <option value="jembatan_chaos">Jembatan Chaos</option>
+              </select>
+            </div>
+            <div>
+              <label for="mode-select" style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Mode</label>
+              <select id="mode-select" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:14px;">
+                <option value="ffa">Free-For-All</option>
+                <option value="koth">King of the Hill</option>
+                <option value="ctf">Capture the Flag</option>
+              </select>
+            </div>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
             <button id="btn-host" type="button" style="padding:14px;border:0;border-radius:14px;background:linear-gradient(180deg,#ffe082,#ffca28);color:#111;font-weight:900;font-size:16px;cursor:pointer;">🎉 Buat Party</button>
             <button id="btn-solo" type="button" style="padding:14px;border:0;border-radius:14px;background:#334155;color:#fff;font-weight:800;font-size:16px;cursor:pointer;">Main Solo</button>
