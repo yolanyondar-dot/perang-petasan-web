@@ -18,7 +18,7 @@ let terrain, player, bots = [], projectiles = [], effects = [], smokes = [], del
 let wind = 0, windTarget = 0, windTimer = 0;
 let msg = '', msgTimer = 0, gameOver = false, restartTimer = 0;
 let selectedCharId = 'udin';
-let selectedMapId = 'gang_kampung';
+let selectedMapId = 'kampung_festival';
 const pickups = new PickupManager();
 
 // --- networking ---
@@ -48,16 +48,18 @@ const ui = createUIScreens({
     if (netMode === 'player' && network.connected) network.send({ type: 'player-hello', charId: selectedCharId, name: ui.getPlayerName() });
   },
   onMapSelect: (id) => { selectedMapId = id; },
-  onPlayBot: ({ charId, mapId, name }) => {
+  onPlayBot: ({ charId, mapId, name, costumeColor }) => {
     selectedCharId = charId; selectedMapId = mapId;
+    if (costumeColor) ui.state.costumeColor = costumeColor;
     netMode = 'local'; waitingRoom = false; hostRoomCode = null; myPlayerId = null;
     remoteInputs.clear(); remoteCharIds.clear(); remoteNames.clear();
     network.disconnect();
     spawnWorld();
     ui.show('playing');
   },
-  onCreateRoom: ({ charId, mapId, name }) => {
+  onCreateRoom: ({ charId, mapId, name, costumeColor }) => {
     selectedCharId = charId; selectedMapId = mapId;
+    if (costumeColor) ui.state.costumeColor = costumeColor;
     netMode = 'host'; waitingRoom = true; hostRoomCode = null; myPlayerId = null;
     remoteInputs.clear(); remoteCharIds.clear(); remoteNames.clear();
     spawnWorld();
@@ -68,8 +70,9 @@ const ui = createUIScreens({
     controls.setEnabled(false);
     network.connect({ mode: 'host', reconnect: true });
   },
-  onJoinRoom: ({ code, charId, name }) => {
+  onJoinRoom: ({ code, charId, name, costumeColor }) => {
     selectedCharId = charId;
+    if (costumeColor) ui.state.costumeColor = costumeColor;
     netMode = 'player'; waitingRoom = true; hostRoomCode = code; myPlayerId = null;
     remoteInputs.clear(); remoteCharIds.clear(); remoteNames.clear();
     ui.setRoom(code, false);
@@ -392,7 +395,8 @@ function spawnWorld() {
   const pDef = getCharacter(selectedCharId);
   const spawns = terrain.spawns.length ? terrain.spawns : [{x:180,y:terrain.findSurfaceY(180)},{x:W-220,y:terrain.findSurfaceY(W-220)},{x:W-420,y:terrain.findSurfaceY(W-420)}];
   const pSpawn = spawns[0];
-  player = new Character({ x: pSpawn.x, y: pSpawn.y, name: ui.getPlayerName() || pDef.short, color: pDef.color, facing: 1, isBot: false, charId: pDef.id, skin: pDef.skin, charDef: pDef });
+  const pColor = ui.state.costumeColor || pDef.color;
+  player = new Character({ x: pSpawn.x, y: pSpawn.y, name: ui.getPlayerName() || pDef.short, color: pColor, facing: 1, isBot: false, charId: pDef.id, skin: { ...pDef.skin, shirt: pColor }, charDef: pDef });
   player.isLocal = true;
   controls.setCharacter(pDef);
   const botIds = CHARACTER_LIST.map(c => c.id).filter(id => id !== selectedCharId);

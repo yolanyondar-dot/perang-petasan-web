@@ -1,4 +1,5 @@
-import { drawCharacter2D } from './visualAssets2d.js';
+import { drawChibiHero2D } from './ballisticStyleAssets.js';
+import { drawCharacterHud2D } from './visualAssets2d.js';
 const GRAVITY = 1500;
 const MOVE_SPEED = 170;
 const JUMP_VEL = -560;
@@ -164,7 +165,53 @@ export class Character {
     return { x: this.x + this.facing * 14, y: this.y - 30 };
   }
 
-  draw(ctx) {
-    drawCharacter2D(ctx, this);
+  draw(ctx, opts = {}) {
+    if (this.eliminated) return;
+    const showPedestal = !!opts.showPedestal;
+    const scale = opts.scale ?? 1;
+    const t = performance.now() / 1000;
+    const walkPhase = this.onGround ? (this.runPhase || 0) : (this.runPhase || 0) * 0.3;
+    const aimRad = (-(this.aimAngle || 45) * Math.PI / 180) * (this.facing || 1);
+
+    ctx.save();
+    if (this.hurtAnim > 0) ctx.globalAlpha = 0.75 + Math.sin(t * 40) * 0.25;
+    if (!this.alive) { ctx.globalAlpha = 0.85; }
+
+    // buff glow
+    if (this.buff) {
+      ctx.save();
+      ctx.globalAlpha = 0.25 + Math.sin(t * 8) * 0.08;
+      ctx.strokeStyle = '#80deea'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(this.x, this.y - 24 * scale, 28 * scale, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
+    // knockout tilt
+    const kx = this.x, ky = this.y;
+    if (!this.alive) {
+      ctx.save();
+      ctx.translate(kx, ky);
+      ctx.rotate((this.facing || 1) * 0.2);
+      ctx.translate(-kx, -ky);
+    }
+
+    drawChibiHero2D(ctx, {
+      x: this.x,
+      y: this.y,
+      scale,
+      facing: this.facing || 1,
+      characterId: this.charId || 'udin',
+      primaryColor: this.skin?.shirt || this.color || '#ef4444',
+      accentColor: this.skin?.shirt2 || this.skin?.accessoryColor || '#facc15',
+      walkPhase,
+      aimAngle: aimRad,
+      isAiming: !opts.lobbyIdle,
+      showPedestal,
+    });
+
+    if (!this.alive) ctx.restore();
+    ctx.restore();
+
+    if (!opts.hideHud) drawCharacterHud2D(ctx, this);
   }
 }

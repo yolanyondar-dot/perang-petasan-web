@@ -1,7 +1,10 @@
 import { CHARACTER_LIST } from './charactersConfig.js';
-import { MAP_LIST } from './terrain.js';
+import { MAP_LIST, normalizeMapId } from './terrain.js';
+import { drawChibiHero2D, renderBallisticMapBackdrop, paintStylizedTerrainLayer } from './ballisticStyleAssets.js';
+import { drawQRToCanvas } from './qrcodeMini.js';
 
 const LS_NAME = 'pp_player_name';
+const COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4'];
 
 export function createUIScreens(callbacks = {}) {
   const $ = (id) => document.getElementById(id);
@@ -18,11 +21,15 @@ export function createUIScreens(callbacks = {}) {
     screen: 'login',
     playerName: localStorage.getItem(LS_NAME) || '',
     charId: 'udin',
-    mapId: 'gang_kampung',
+    mapId: 'kampung_festival',
+    costumeColor: COLORS[0],
     roomCode: null,
     isHost: false,
-    players: [], // {name,charId,isHost,isReady,isBot,isMe}
+    players: [],
   };
+
+  let previewRAF = null;
+  let particles = makeParticles();
 
   function getPlayerName() {
     return (state.playerName || 'Pemain').trim().slice(0, 14) || 'Pemain';
@@ -35,49 +42,88 @@ export function createUIScreens(callbacks = {}) {
     if (hud) hud.style.display = playing ? 'flex' : 'none';
     if (hint) hint.style.display = playing ? '' : 'none';
     if (btnMenu) btnMenu.style.display = playing ? 'block' : 'none';
-    // hide hint on mobile via css; but ensure not forced
     if (playing && window.matchMedia('(max-width: 900px)').matches && hint) hint.style.display = 'none';
+    if (name === 'lobby' || name === 'waiting' || name === 'login') startPreviewLoop();
+    else stopPreviewLoop();
+    if (name === 'lobby') { renderLobby(); }
+    if (name === 'waiting') { renderWaiting(); }
     callbacks.onScreenChange?.(name);
   }
+
+  function roleFor(id) { return id === 'udin' ? 'Fighter' : id === 'sari' ? 'Area Control' : id === 'hendra' ? 'Tank/Bruiser' : 'Agile'; }
 
   function renderChars() {
     const grid = $('char-grid');
     if (!grid) return;
-    grid.innerHTML = CHARACTER_LIST.map(c => {
-      const s1 = c.skills.skill1?.name || '-';
-      const s2 = c.skills.skill2?.name || '-';
-      const u = c.skills.ulti?.name || '-';
-      const role = c.id === 'udin' ? 'Fighter' : c.id === 'sari' ? 'Area Control' : c.id === 'hendra' ? 'Tank/Bruiser' : 'Agile';
-      return `<div class="card ${state.charId===c.id?'selected':''}" data-char="${c.id}">
-        <h3>${c.name}</h3>
-        <div class="role">${role}</div>
-        <div class="skill"><b>S1:</b> ${s1}<br><b>S2:</b> ${s2}<br><b>Ulti:</b> ${u}</div>
-      </div>`;
-    }).join('');
+    grid.innerHTML = CHARACTER_LIST.map(c => `<button class="pick ${state.charId===c.id?'selected':''}" data-char="${c.id}">${c.name}</button>`).join('');
     grid.querySelectorAll('[data-char]').forEach(el => el.addEventListener('click', () => {
       state.charId = el.dataset.char;
-      renderChars();
+      const def = CHARACTER_LIST.find(x=>x.id===state.charId);
+      if (def?.color) state.costumeColor = def.color;
+      renderLobby();
       callbacks.onCharSelect?.(state.charId);
     }));
+  }
+
+  function renderColors() {
+    const row = $('color-row');
+    if (!row) return;
+    row.innerHTML = COLORS.map(col => `<button class="swatch ${state.costumeColor===col?'selected':''}" data-color="${col}" style="background:${col}" aria-label="warna"></button>`).join('');
+    row.querySelectorAll('[data-color]').forEach(el => el.addEventListener('click', () => {
+      state.costumeColor = el.dataset.color;
+      renderColors();
+      callbacks.onColorSelect?.(state.costumeColor);
+    }));
+  }
+
+  function renderHeroInfo() {
+    const c = CHARACTER_LIST.find(x=>x.id===state.charId) || CHARACTER_LIST[0];
+    const role = roleFor(c.id);
+    $('hero-name').textContent = c.name;
+    $('hero-role').textContent = role;
+    const s1 = c.skills.skill1?.name || '-';
+    const s2 = c.skills.skill2?.name || '-';
+    const u = c.skills.ulti?.name || '-';
+    $('skill-badges').innerHTML = `<span class="badge"><b>S1</b> ${escapeHtml(s1)}</span><span class="badge"><b>S2</b> ${escapeHtml(s2)}</span><span class="badge"><b>ULTI</b> ${escapeHtml(u)}</span>`;
+    $('hero-stats').innerHTML = `<b>Peran:</b> ${role}<br><b>Skill 1:</b> ${escapeHtml(s1)}<br><b>Skill 2:</b> ${escapeHtml(s2)}<br><b>Ulti:</b> ${escapeHtml(u)}`;
   }
 
   function renderMaps() {
     const grid = $('map-grid');
     if (!grid) return;
     const desc = {
-      gang_kampung: 'Bukit ringan, pagar & pohon kampung.',
-      atap_rumah: 'Atap genteng bertingkat dengan celah.',
-      jurang_kali: 'Dua daratan, jurang tengah, pijakan bawah.',
+      kampung_festival: 'Dataran kampung cerah, festival petasan.',
+      atap_senja: 'Atap bertingkat saat senja, celah lompatan.',
+      jembatan_bulan: 'Jembatan malam bulan, jurang & pulau tengah.',
     };
-    grid.innerHTML = MAP_LIST.map(m => `<div class="card ${state.mapId===m.id?'selected':''}" data-map="${m.id}">
-      <h3>${m.name}</h3>
-      <div class="skill">${desc[m.id] || ''}</div>
+    grid.innerHTML = MAP_LIST.map(m => `<div class="map-card ${state.mapId===m.id?'selected':''}" data-map="${m.id}">
+      <canvas class="map-thumb" width="192" height="108" data-thumb="${m.id}"></canvas>
+      <div><h4>${m.name}</h4><p>${desc[m.id]||''}</p></div>
     </div>`).join('');
     grid.querySelectorAll('[data-map]').forEach(el => el.addEventListener('click', () => {
       state.mapId = el.dataset.map;
       renderMaps();
       callbacks.onMapSelect?.(state.mapId);
     }));
+    // draw thumbnails
+    grid.querySelectorAll('canvas[data-thumb]').forEach(cv => {
+      const id = cv.dataset.thumb;
+      const c = cv.getContext('2d');
+      const w = cv.width, h = cv.height;
+      renderBallisticMapBackdrop(c, w, h, id, 0);
+      // mini terrain
+      const tc = document.createElement('canvas'); tc.width=w; tc.height=h;
+      paintStylizedTerrainLayer(tc.getContext('2d'), w, h, id);
+      c.drawImage(tc, 0, 0);
+    });
+  }
+
+  function renderLobby() {
+    $('lobby-player-name').textContent = getPlayerName();
+    renderChars();
+    renderColors();
+    renderHeroInfo();
+    renderMaps();
   }
 
   function renderWaiting() {
@@ -87,16 +133,92 @@ export function createUIScreens(callbacks = {}) {
     $('waiting-role').textContent = state.isHost ? 'Host' : 'Player';
     $('btn-start-game').style.display = state.isHost ? '' : 'none';
     $('btn-add-bot').style.display = state.isHost ? '' : 'none';
+    const qrCv = $('qr-canvas');
+    if (qrCv) drawQRToCanvas(qrCv, link === '-' ? 'perang-petasan' : link, { size: 120 });
+
     const list = $('waiting-players');
-    list.innerHTML = (state.players.length ? state.players : [{name:getPlayerName(),charId:state.charId,isHost:state.isHost,isMe:true}]).map(p => {
-      const c = CHARACTER_LIST.find(x=>x.id===p.charId);
-      const tags = [p.isHost ? 'Host' : null, p.isBot ? 'Bot' : null, p.isMe ? 'Kamu' : null, p.isReady ? 'Siap' : null].filter(Boolean).join(' • ');
-      return `<div class="player-row"><div><strong>${escapeHtml(p.name||'Pemain')}</strong><div class="meta">${escapeHtml(c?.name||p.charId||'-')}${tags ? ' — '+tags : ''}</div></div><div class="pill">${p.isBot?'BOT':'ONLINE'}</div></div>`;
+    const players = state.players.length ? state.players : [{ name: getPlayerName(), charId: state.charId, isHost: state.isHost, isMe: true }];
+    list.innerHTML = players.map((p, i) => {
+      const c = CHARACTER_LIST.find(x=>x.id===p.charId) || CHARACTER_LIST[0];
+      const tags = [p.isHost ? 'Host' : null, p.isBot ? 'Bot' : null, p.isMe ? 'Kamu' : null].filter(Boolean).join(' • ');
+      return `<div class="slot"><canvas width="128" height="128" data-slot="${i}"></canvas><div><div class="name">${escapeHtml(p.name||'Pemain')}</div><div class="meta">${escapeHtml(c.name)}${tags ? ' • '+tags : ''}</div></div></div>`;
     }).join('');
+    list.querySelectorAll('canvas[data-slot]').forEach(cv => {
+      const i = Number(cv.dataset.slot);
+      const p = players[i]; if (!p) return;
+      const c = CHARACTER_LIST.find(x=>x.id===p.charId) || CHARACTER_LIST[0];
+      const ctx = cv.getContext('2d');
+      ctx.clearRect(0,0,128,128);
+      const bg = ctx.createLinearGradient(0,0,0,128); bg.addColorStop(0,'#bfdbfe'); bg.addColorStop(1,'#fde68a');
+      ctx.fillStyle = bg; ctx.fillRect(0,0,128,128);
+      drawChibiHero2D(ctx, { x: 64, y: 102, scale: 1.55, facing: 1, characterId: c.id, primaryColor: c.color, accentColor: c.skin?.shirt2 || '#facc15', walkPhase: 0, isAiming: false, showPedestal: true });
+    });
   }
 
-  function setLobbyStatus(msg) { const el=$('lobby-status'); if(el) el.textContent = msg || ''; }
-  function setWaitingStatus(msg) { const el=$('waiting-status'); if(el) el.textContent = msg || ''; }
+  function makeParticles() {
+    return Array.from({ length: 24 }, () => ({ x: Math.random()*1400, y: Math.random()*800, r: 1+Math.random()*2.5, v: 8+Math.random()*18, a: 0.2+Math.random()*0.5 }));
+  }
+  function drawParticles(ctx, w, h, dt) {
+    ctx.save();
+    for (const p of particles) {
+      p.y -= p.v * dt; p.x += Math.sin(p.y*0.01) * 8 * dt;
+      if (p.y < -10) { p.y = h + 10; p.x = Math.random()*w; }
+      ctx.globalAlpha = p.a;
+      ctx.fillStyle = '#fff7cc';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function startPreviewLoop() {
+    if (previewRAF) return;
+    let last = performance.now();
+    const step = (now) => {
+      if (!['login','lobby','waiting'].includes(state.screen)) { previewRAF = null; return; }
+      const dt = Math.min(0.05, (now-last)/1000); last = now;
+      drawBackgrounds(dt, now/1000);
+      if (state.screen === 'lobby') drawHeroPreview(now/1000);
+      previewRAF = requestAnimationFrame(step);
+    };
+    previewRAF = requestAnimationFrame(step);
+  }
+  function stopPreviewLoop() { if (previewRAF) { cancelAnimationFrame(previewRAF); previewRAF = null; } }
+
+  function drawBackgrounds(dt, t) {
+    for (const [name, id] of [['login','login-bg'],['lobby','lobby-bg'],['waiting','waiting-bg']]) {
+      if (state.screen !== name) continue;
+      const cv = $(id); if (!cv) continue;
+      const r = cv.getBoundingClientRect();
+      const w = Math.max(300, Math.floor(r.width)); const h = Math.max(200, Math.floor(r.height));
+      if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+      const c = cv.getContext('2d');
+      renderBallisticMapBackdrop(c, w, h, state.mapId || 'kampung_festival', t);
+      drawParticles(c, w, h, dt);
+    }
+  }
+
+  function drawHeroPreview(t) {
+    const cv = $('hero-canvas'); if (!cv) return;
+    const c = cv.getContext('2d');
+    const w = cv.width, h = cv.height;
+    c.clearRect(0,0,w,h);
+    // glow behind hero
+    const g = c.createRadialGradient(w*0.5, h*0.7, 20, w*0.5, h*0.7, 180);
+    g.addColorStop(0,'rgba(255,255,255,0.18)'); g.addColorStop(1,'rgba(255,255,255,0)');
+    c.fillStyle = g; c.fillRect(0,0,w,h);
+    const charDef = CHARACTER_LIST.find(x=>x.id===state.charId) || CHARACTER_LIST[0];
+    const bob = Math.sin(t*2.2) * 4;
+    drawChibiHero2D(c, {
+      x: w/2, y: h*0.78 + bob, scale: 2.3, facing: 1,
+      characterId: charDef.id,
+      primaryColor: state.costumeColor || charDef.color,
+      accentColor: charDef.skin?.shirt2 || '#facc15',
+      walkPhase: Math.sin(t*2) * 0.8,
+      aimAngle: -0.3,
+      isAiming: false,
+      showPedestal: true,
+    });
+  }
 
   function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
 
@@ -108,24 +230,20 @@ export function createUIScreens(callbacks = {}) {
     if (!v) { nameInput?.focus(); return; }
     state.playerName = v;
     localStorage.setItem(LS_NAME, v);
-    $('lobby-player-name').textContent = v;
-    renderChars(); renderMaps();
+    renderLobby();
     show('lobby');
     callbacks.onLogin?.(v);
   });
   nameInput?.addEventListener('keydown', (e)=>{ if(e.key==='Enter') $('login-submit')?.click(); });
 
   $('lobby-logout')?.addEventListener('click', () => { show('login'); nameInput?.focus(); });
-  $('lobby-player-name').textContent = getPlayerName();
-
-  $('btn-play-bot')?.addEventListener('click', () => callbacks.onPlayBot?.({ charId: state.charId, mapId: state.mapId, name: getPlayerName() }));
-  $('btn-create-room')?.addEventListener('click', () => callbacks.onCreateRoom?.({ charId: state.charId, mapId: state.mapId, name: getPlayerName() }));
+  $('btn-play-bot')?.addEventListener('click', () => callbacks.onPlayBot?.({ charId: state.charId, mapId: state.mapId, name: getPlayerName(), costumeColor: state.costumeColor }));
+  $('btn-create-room')?.addEventListener('click', () => callbacks.onCreateRoom?.({ charId: state.charId, mapId: state.mapId, name: getPlayerName(), costumeColor: state.costumeColor }));
   $('btn-join-room')?.addEventListener('click', () => {
     const code = ($('join-code-input')?.value || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,4);
     if (code.length < 4) { setLobbyStatus('Masukkan kode room 4 karakter.'); return; }
-    callbacks.onJoinRoom?.({ code, charId: state.charId, name: getPlayerName() });
+    callbacks.onJoinRoom?.({ code, charId: state.charId, name: getPlayerName(), costumeColor: state.costumeColor });
   });
-
   $('btn-copy-link')?.addEventListener('click', async () => {
     const link = $('waiting-link')?.textContent || '';
     if (!link || link === '-') return;
@@ -137,24 +255,19 @@ export function createUIScreens(callbacks = {}) {
   $('btn-leave-room')?.addEventListener('click', () => callbacks.onLeaveRoom?.());
   btnMenu?.addEventListener('click', () => callbacks.onMenu?.());
 
-  // Auto login if name saved
-  renderChars(); renderMaps();
-  if (state.playerName) {
-    $('lobby-player-name').textContent = getPlayerName();
-    show('lobby');
-    // don't auto-callback login to avoid double init; caller can check
-  } else {
-    show('login');
-  }
+  // init
+  renderLobby();
+  if (state.playerName) show('lobby');
+  else show('login');
 
   return {
     state,
     show,
     getPlayerName,
-    setLobbyStatus,
-    setWaitingStatus,
+    setLobbyStatus: (msg) => { const el=$('lobby-status'); if(el) el.textContent = msg || ''; },
+    setWaitingStatus: (msg) => { const el=$('waiting-status'); if(el) el.textContent = msg || ''; },
     renderWaiting,
-    renderChars,
+    renderChars: renderLobby,
     renderMaps,
     setRoom(code, isHost) { state.roomCode = code; state.isHost = !!isHost; renderWaiting(); },
     setPlayers(players) { state.players = players; renderWaiting(); },
