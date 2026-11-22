@@ -1,3 +1,4 @@
+import { drawExplosion2D } from './visualAssets2d.js';
 const G = 980;
 const WIND_SCALE = 22;
 
@@ -99,40 +100,7 @@ export class Petasan {
   }
 
   draw(ctx) {
-    // trail
-    if (this.trail.length > 1) {
-      ctx.save();
-      ctx.strokeStyle = this.type === 'ulti' ? 'rgba(255,120,50,0.75)' : 'rgba(255,235,150,0.7)';
-      ctx.lineWidth = this.type === 'ulti' ? 3 : 2;
-      ctx.beginPath();
-      for (let i = 0; i < this.trail.length; i++) {
-        const p = this.trail[i];
-        if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-    if (!this.alive) return;
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    const rot = Math.atan2(this.vy, this.vx);
-    ctx.rotate(rot);
-    if (this.type === 'ulti') {
-      ctx.fillStyle = '#b71c1c';
-      ctx.beginPath(); ctx.ellipse(0, 0, 10, 7, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffd54f';
-      ctx.fillRect(-2, -8, 4, 4);
-      if (Math.sin(performance.now() * 0.03) > 0) { ctx.fillStyle = '#fff'; ctx.fillRect(8, -2, 3, 3); }
-    } else if (this.type === 'skill1') {
-      ctx.fillStyle = '#d84315';
-      roundRectLocal(ctx, -7, -5, 14, 10, 3); ctx.fill();
-      ctx.fillStyle = '#ffeb3b'; ctx.fillRect(5, -1.5, 4, 3);
-    } else {
-      ctx.fillStyle = '#e53935';
-      ctx.beginPath(); ctx.arc(0, 0, this.r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffd54f'; ctx.fillRect(3, -1, 3, 2);
-    }
-    ctx.restore();
+    drawExplosion2D(ctx, this);
   }
 }
 

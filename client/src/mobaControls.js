@@ -4,6 +4,7 @@ export class MobaControls {
     this.onFire = opts.onFire || (() => {}); // (type, angleDeg, power)
     this.onJump = opts.onJump || (() => {});
     this.getAimDefaults = opts.getAimDefaults || (() => ({ angle: 45, power: 65, facing: 1 }));
+    this.enabled = true;
 
     this.state = {
       moveX: 0,
@@ -68,6 +69,7 @@ export class MobaControls {
   _bindJoystick() {
     const base = this.el.joyBase;
     const onDown = (e) => {
+      if (!this.enabled) return;
       e.preventDefault();
       base.setPointerCapture?.(e.pointerId);
       const r = base.getBoundingClientRect();
@@ -107,13 +109,14 @@ export class MobaControls {
 
   _bindButtons() {
     // Jump
-    this.el.jump.addEventListener('pointerdown', (e) => { e.preventDefault(); this.onJump(); this.el.jump.classList.add('pressed'); });
+    this.el.jump.addEventListener('pointerdown', (e) => { if (!this.enabled) return; e.preventDefault(); this.onJump(); this.el.jump.classList.add('pressed'); });
     const jumpUp = () => this.el.jump.classList.remove('pressed');
     this.el.jump.addEventListener('pointerup', jumpUp); this.el.jump.addEventListener('pointercancel', jumpUp); this.el.jump.addEventListener('pointerleave', jumpUp);
 
     // Basic attack: tap or drag-to-aim
     const atk = this.el.attack;
     atk.addEventListener('pointerdown', (e) => {
+      if (!this.enabled) return;
       e.preventDefault();
       if (this.cooldowns.basic > 0) return;
       atk.setPointerCapture?.(e.pointerId);
@@ -161,6 +164,7 @@ export class MobaControls {
     for (const id of ['skill1', 'skill2']) {
       const el = this.el[id];
       el.addEventListener('pointerdown', (e) => {
+        if (!this.enabled) return;
         e.preventDefault();
         if (this.cooldowns[id] > 0) return;
         const def = this.getAimDefaults();
@@ -173,6 +177,7 @@ export class MobaControls {
 
     // Ulti
     this.el.ulti.addEventListener('pointerdown', (e) => {
+      if (!this.enabled) return;
       e.preventDefault();
       if (!this.ultiReady || this.cooldowns.ulti > 0) return;
       const def = this.getAimDefaults();
@@ -184,6 +189,7 @@ export class MobaControls {
 
   _bindKeys() {
     window.addEventListener('keydown', (e) => {
+      if (!this.enabled) return;
       if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD','KeyJ','KeyK','KeyL','KeyI'].includes(e.code)) e.preventDefault();
       this.keys.add(e.code);
       if (e.code === 'Space' && !e.repeat) this.onJump();
@@ -201,6 +207,20 @@ export class MobaControls {
       }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+  }
+
+  setEnabled(v) {
+    this.enabled = !!v;
+    this.root.style.display = this.enabled ? '' : 'none';
+    if (!this.enabled) {
+      this.keys.clear();
+      this.state.moveX = 0;
+      this.state.aimActive = false;
+      this.joy.active = false; this.joy.pointerId = null; this.joy.x = 0; this.joy.y = 0;
+      if (this.el?.joyKnob) this.el.joyKnob.style.transform = 'translate(0px,0px)';
+      this.attack.active = false; this.attack.pointerId = null;
+      this.el?.aimHint?.classList.remove('show');
+    }
   }
 
   setUltiEnergy(v) {

@@ -1,3 +1,4 @@
+import { drawPickup2D } from './visualAssets2d.js';
 const TYPES = ['energy', 'hp', 'cooldown'];
 
 export class Pickup2D {
@@ -45,48 +46,7 @@ export class Pickup2D {
   }
 
   draw(ctx) {
-    if (this.dead) return;
-    const t = performance.now() / 1000 + this.bob;
-    const bobY = this.landed ? Math.sin(t * 3) * 2 : 0;
-    const x = this.x;
-    const y = this.y + bobY;
-
-    // parachute while falling
-    if (!this.landed) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(x - 10, y - 10); ctx.lineTo(x - 18, y - 34); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x + 10, y - 10); ctx.lineTo(x + 18, y - 34); ctx.stroke();
-      ctx.fillStyle = '#ff7043';
-      ctx.beginPath();
-      ctx.arc(x, y - 34, 20, Math.PI, 0);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(x, y - 34, 20, Math.PI, Math.PI * 1.5); ctx.lineTo(x, y - 34); ctx.closePath(); ctx.fill();
-      ctx.restore();
-    }
-
-    // box
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.beginPath(); ctx.ellipse(0, this.h / 2 + 2, 12, 3, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = this.type === 'energy' ? '#7e57c2' : this.type === 'hp' ? '#43a047' : '#039be5';
-    roundRect(ctx, -13, -11, 26, 22, 4);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.fillStyle = '#ffd54f';
-    ctx.fillRect(-2, -11, 4, 22);
-    ctx.fillRect(-13, -2, 26, 4);
-    // icon
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 11px system-ui';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const icon = this.type === 'energy' ? '⚡' : this.type === 'hp' ? '+' : 'CD';
-    ctx.fillText(icon, 0, 1);
-    ctx.restore();
+    drawPickup2D(ctx, this);
   }
 }
 
