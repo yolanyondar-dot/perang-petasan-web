@@ -1,4 +1,5 @@
 import { drawExplosion2D } from './visualAssets2d.js';
+import { getFxImage } from './assetLoader.js';
 const G = 980;
 const WIND_SCALE = 22;
 
@@ -148,6 +149,15 @@ export class ExplosionFX {
   draw(ctx) {
     const t = Math.min(1, this.age / this.duration);
     const a = 1 - t;
+    const img = getFxImage('explosion');
+    if (img) {
+      ctx.save();
+      ctx.globalAlpha = a * 0.95;
+      const size = this.radius * 2.6 * (0.5 + t * 0.7);
+      ctx.drawImage(img, this.x - size / 2, this.y - size / 2, size, size);
+      ctx.restore();
+      return;
+    }
     ctx.save();
     ctx.globalAlpha = a * 0.45;
     ctx.fillStyle = '#ffcc80';

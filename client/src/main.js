@@ -6,7 +6,7 @@ import { CHARACTER_LIST, getCharacter } from './charactersConfig.js';
 import { PickupManager } from './pickup2d.js';
 import { createNetwork } from './network.js';
 import { createUIScreens } from './uiScreens.js';
-import { preloadAssets } from './assetLoader.js';
+import { preloadAssets, getFxImage } from './assetLoader.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -681,10 +681,18 @@ function projDraw(ctx) {
     for (const t of this.trail) ctx.lineTo(t.x, t.y);
     ctx.stroke(); ctx.restore();
   }
+  const imgName = this.type === 'ulti' ? 'projectile-ulti' : (this.type === 'basic' ? 'projectile-basic' : 'projectile-skill');
+  const img = getFxImage(imgName);
   ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(Math.atan2(this.vy||0, this.vx||0));
-  ctx.fillStyle = this.type === 'ulti' ? '#ff5722' : '#d32f2f';
-  const r = this.r || 4.5; ctx.beginPath(); ctx.ellipse(0, 0, r * 1.8, r, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#ffd54f'; ctx.fillRect(r * 1.2, -1.5, r, 3); ctx.restore();
+  if (img) {
+    const size = (this.r || 4.5) * 5;
+    ctx.drawImage(img, -size/2, -size/2, size, size);
+  } else {
+    ctx.fillStyle = this.type === 'ulti' ? '#ff5722' : '#d32f2f';
+    const r = this.r || 4.5; ctx.beginPath(); ctx.ellipse(0, 0, r * 1.8, r, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffd54f'; ctx.fillRect(r * 1.2, -1.5, r, 3);
+  }
+  ctx.restore();
 }
 
 function pickupDraw(ctx) {
@@ -700,6 +708,16 @@ function pickupDraw(ctx) {
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y - 34, 20, Math.PI, Math.PI * 1.5); ctx.lineTo(x, y - 34); ctx.closePath(); ctx.fill();
     ctx.restore();
   }
+  const img = getFxImage(this.type === 'energy' ? 'pickup-energy' : this.type === 'hp' ? 'pickup-hp' : 'pickup-cooldown');
+  if (img) {
+    ctx.save();
+    ctx.globalAlpha = 0.2; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(x, y + 13, 12, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    const size = 44;
+    ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
+    ctx.restore();
+    return;
+  }
   ctx.save(); ctx.translate(x, y);
   ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.beginPath(); ctx.ellipse(0, 13, 12, 3, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = this.type === 'energy' ? '#7e57c2' : this.type === 'hp' ? '#43a047' : '#039be5';
@@ -712,9 +730,17 @@ function pickupDraw(ctx) {
 }
 
 function drawSmokes() {
+  const img = getFxImage('smoke');
   for (const s of smokes) {
     const t = s.age / s.duration;
     const a = t < 0.1 ? t / 0.1 : t > 0.7 ? (1 - t) / 0.3 : 1;
+    if (img) {
+      ctx.save(); ctx.globalAlpha = 0.35 * a;
+      const size = s.r * 2.2 * (0.7 + t * 0.4);
+      ctx.drawImage(img, s.x - size/2, s.y - 10 - size/2, size, size);
+      ctx.restore();
+      continue;
+    }
     ctx.save(); ctx.globalAlpha = 0.28 * a;
     ctx.fillStyle = '#cfd8dc'; ctx.beginPath(); ctx.arc(s.x, s.y - 10, s.r * (0.7 + t * 0.4), 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#eceff1';
