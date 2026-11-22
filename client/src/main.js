@@ -741,14 +741,23 @@ async function bootstrap() {
     return ensureRemotePlayer(s.id, s.name, s.color, s.characterType);
   }
 
-  function applyPlayerState(p, s) {
+  function applyPlayerState(p, s, { snap = false } = {}) {
     if (!p || !s) return;
     try {
-      try { p.body.setTranslation({ x: s.x, y: s.y, z: s.z }, true); } catch (_) {}
-      try { p.body.setLinvel({ x: 0, y: 0, z: 0 }, true); } catch (_) {}
-      if (p.group) {
-        p.group.position.set(s.x, s.y, s.z);
-        if (s.qw !== undefined) p.group.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+      p._netTarget = {
+        x: s.x, y: s.y, z: s.z,
+        qx: s.qx ?? 0, qy: s.qy ?? 0, qz: s.qz ?? 0, qw: s.qw ?? 1,
+      };
+      const cur = p.group?.position;
+      const dist = cur ? Math.hypot(cur.x - s.x, cur.y - s.y, cur.z - s.z) : 999;
+      const hardSnap = snap || dist > 2.5 || !cur;
+      if (hardSnap) {
+        try { p.body.setTranslation({ x: s.x, y: s.y, z: s.z }, true); } catch (_) {}
+        try { p.body.setLinvel({ x: 0, y: 0, z: 0 }, true); } catch (_) {}
+        if (p.group) {
+          p.group.position.set(s.x, s.y, s.z);
+          if (s.qw !== undefined) p.group.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+        }
       }
       if (typeof s.maxHp === 'number') p.maxHp = s.maxHp;
       if (typeof s.hp === 'number') p.hp = s.hp;
@@ -1200,7 +1209,7 @@ async function bootstrap() {
     overlay?.classList.remove('hidden');
     const lobbyInterval = setInterval(() => {
       if (network.connected) network.send({ type: 'game-state', state: buildHostState() });
-    }, 500);
+    }, 200);
     await partyStartPromise;
     clearInterval(lobbyInterval);
     overlay?.classList.add('hidden');
@@ -1247,6 +1256,34 @@ async function bootstrap() {
 
     stepPhysics(dt);
     for (const p of players) p.update(dt, camera, p.isBot ? p._botInput : undefined);
+    if (isOnlineClient) {
+      const lerp = 1 - Math.exp(-dt * 12);
+      for (const p of players) {
+        const t = p?._netTarget;
+        if (!t || !p.group) continue;
+        const isLocal = p === player;
+        const pos = p.group.position;
+        const dx = t.x - pos.x, dy = t.y - pos.y, dz = t.z - pos.z;
+        const d = Math.hypot(dx, dy, dz);
+        if (d < 0.01) continue;
+        if (d > 3) {
+          try { p.body.setTranslation({ x: t.x, y: t.y, z: t.z }, true); } catch (_) {}
+          pos.set(t.x, t.y, t.z);
+        } else if (!isLocal || d > 0.35) {
+          const nx = pos.x + dx * lerp;
+          const ny = pos.y + dy * lerp;
+          const nz = pos.z + dz * lerp;
+          pos.set(nx, ny, nz);
+          try { p.body.setTranslation({ x: nx, y: ny, z: nz }, true); } catch (_) {}
+        }
+        if (!isLocal) {
+          try { p.body.setLinvel({ x: 0, y: 0, z: 0 }, true); } catch (_) {}
+        }
+        if (t.qw !== undefined && (!isLocal || d > 0.2)) {
+          p.group.quaternion.slerp(new THREE.Quaternion(t.qx, t.qy, t.qz, t.qw), lerp);
+        }
+      }
+    }
 
     pickupManager.update(dt, camera);
 
@@ -1329,7 +1366,7 @@ async function bootstrap() {
 
     if (isOnlineHost && network.connected) {
       hostStateTimer += dt;
-      if (hostStateTimer >= 0.1) {
+      if (hostStateTimer >= 0.05) {
         hostStateTimer = 0;
         network.send({ type: 'game-state', state: buildHostState() });
       }
