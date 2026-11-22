@@ -95,7 +95,7 @@ export class Character {
     if (!this.alive) {
       this.vy = Math.min(MAX_FALL, this.vy + GRAVITY * dt);
       this.y += this.vy * dt;
-      if (this.y > terrain.height + 120) this.eliminated = true;
+      if (this.y > (terrain.deathY ?? terrain.height + 120)) this.eliminated = true;
       return;
     }
 
@@ -152,7 +152,7 @@ export class Character {
     }
 
     // fell into abyss
-    if (this.y > terrain.height + 80) {
+    if (this.y > (terrain.deathY ?? terrain.height + 80)) {
       this.hp = 0;
       this.alive = false;
       this.eliminated = true;

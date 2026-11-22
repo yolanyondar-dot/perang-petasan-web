@@ -182,18 +182,35 @@ export class FightRoom implements DurableObject {
     if (role === 'controller' || role === 'player') {
       if (data.type === 'player-input') {
         const state = data.state && typeof data.state === 'object' ? data.state : data;
-        const safe = {
+        // Accept 2D MOBA fields; keep legacy 3D fields for compatibility
+        const safe: any = {
           moveX: Math.max(-1, Math.min(1, Number(state.moveX) || 0)),
           moveZ: Math.max(-1, Math.min(1, Number(state.moveZ) || 0)),
           jump: !!state.jump,
           punch: !!state.punch,
           grabThrow: !!state.grabThrow,
           bombHeld: !!state.bombHeld,
+          // 2D fields
+          aimAngle: Math.max(0, Math.min(90, Number(state.aimAngle) || 0)),
+          aimPower: Math.max(0, Math.min(100, Number(state.aimPower) || 0)),
+          aimFacing: state.aimFacing === -1 ? -1 : 1,
+          aimActive: !!state.aimActive,
+          fire: typeof state.fire === 'string' ? state.fire.slice(0, 20) : null,
+          fireAngle: Math.max(0, Math.min(90, Number(state.fireAngle) || 0)),
+          firePower: Math.max(0, Math.min(100, Number(state.firePower) || 0)),
+          seq: Number.isFinite(Number(state.seq)) ? Math.floor(Number(state.seq)) : 0,
         };
         const payload: any = { type: 'player-input', roomCode, state: safe, kind: role };
         if (role === 'controller') payload.controllerId = id;
         else { payload.playerId = id; payload.controllerId = id; }
         this.safeSend(host, payload);
+      }
+      if (data.type === 'player-hello') {
+        // Allow player to update character/name after join
+        const charId = typeof data.charId === 'string' ? data.charId.slice(0, 24) : a.characterType;
+        const pname = typeof data.name === 'string' ? data.name.trim().slice(0, 14) || a.name : a.name;
+        ws.serializeAttachment({ ...a, name: pname, characterType: charId } satisfies Attachment);
+        this.safeSend(host, { type: 'player-hello', roomCode, playerId: id, controllerId: id, name: pname, charId, kind: role });
       }
       return;
     }

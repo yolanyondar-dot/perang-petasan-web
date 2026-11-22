@@ -84,13 +84,27 @@
         position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 25;
         display: flex; gap: 8px; padding: 8px; border-radius: 12px; background: rgba(15,23,42,.62); backdrop-filter: blur(4px);
       }
+      #map-picker {
+        position: fixed; top: 126px; left: 50%; transform: translateX(-50%); z-index: 25;
+        display: flex; gap: 8px; padding: 6px 8px; border-radius: 12px; background: rgba(15,23,42,.52); backdrop-filter: blur(4px);
+      }
       .pick {
         border: 2px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06); color: #fff; border-radius: 10px;
         padding: 6px 10px; cursor: pointer; font-size: 12px; font-weight: 700; min-width: 86px;
       }
       .pick small { display: block; font-weight: 500; opacity: .75; font-size: 10px; }
       .pick.active { border-color: #ffd54f; background: rgba(255,213,79,.15); }
-      @media (max-width: 700px) { #picker { top: auto; bottom: 200px; transform: translateX(-50%) scale(.92); } .pick { min-width: 72px; padding: 5px 7px; } }
+      #net-panel {
+        position: fixed; top: 8px; right: 8px; z-index: 30; width: 220px; padding: 8px; border-radius: 12px;
+        background: rgba(15,23,42,.72); color: #fff; font-size: 12px; backdrop-filter: blur(4px);
+      }
+      #net-panel .row { display: flex; gap: 6px; margin-top: 6px; }
+      #net-panel input { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.08); color: #fff; font-size: 12px; }
+      #net-panel button { padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.1); color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
+      #net-panel button.primary { background: #2563eb; border-color: #3b82f6; }
+      #net-panel .status { font-size: 11px; opacity: .85; margin-top: 4px; word-break: break-word; }
+      #net-panel .code { font-size: 18px; font-weight: 800; letter-spacing: 2px; color: #ffd54f; }
+      @media (max-width: 700px) { #picker { top: auto; bottom: 246px; transform: translateX(-50%) scale(.92); } #map-picker { top: auto; bottom: 200px; transform: translateX(-50%) scale(.92); } .pick { min-width: 72px; padding: 5px 7px; } #net-panel { width: 180px; font-size: 11px; } }
     </style>
   </head>
   <body>
@@ -102,6 +116,27 @@
       <button class="pick" data-char="sari">Mbak Sari<small>S1 Renteng</small></button>
       <button class="pick" data-char="hendra">Mas Hendra<small>S1 Dorong</small></button>
       <button class="pick" data-char="dika">Dika<small>S1 Kilat</small></button>
+    </div>
+    <div id="map-picker">
+      <button class="pick active" data-map="gang_kampung">Gang Kampung<small>Bukit ringan</small></button>
+      <button class="pick" data-map="atap_rumah">Atap Rumah<small>Genteng bertingkat</small></button>
+      <button class="pick" data-map="jurang_kali">Jurang Kali<small>Parit tengah</small></button>
+    </div>
+    <div id="net-panel">
+      <div><strong>Online</strong> <span id="net-mode">Lokal</span></div>
+      <div class="status" id="net-status">Mode lokal: lawan bot.</div>
+      <div id="net-room" style="display:none">Kode: <span class="code" id="net-code">----</span></div>
+      <div class="row">
+        <input id="net-name" placeholder="Nama" maxlength="14" value="Pemain" />
+      </div>
+      <div class="row">
+        <button id="net-host" class="primary">Host</button>
+        <input id="net-join-code" placeholder="KODE" maxlength="4" style="width:64px;flex:0 0 64px;text-transform:uppercase" />
+        <button id="net-join">Join</button>
+      </div>
+      <div class="row">
+        <button id="net-leave" style="width:100%;display:none">Keluar Room</button>
+      </div>
     </div>
     <div id="rotate">Putar HP ke mode <span style="color:#ffd54f">&nbsp;Landscape&nbsp;</span> untuk bermain</div>
     <script type="module" src="/src/main.js"></script>
