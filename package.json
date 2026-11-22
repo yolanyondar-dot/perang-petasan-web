@@ -9,14 +9,7 @@
   "scripts": {
     "dev": "npm run dev -w client",
     "build": "npm run build -w client",
-    "preview": "npm run preview -w client",
-    "server": "node server/index.js",
-    "dev:host": "node server/index.js",
-    "start": "node server/index.js"
-  },
-  "dependencies": {
-    "express": "^5.2.1",
-    "socket.io": "^4.8.3"
+    "preview": "npm run preview -w client"
   },
   "engines": {
     "node": ">=20.19.0"

@@ -2,373 +2,108 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b1020" />
-    <title>perang-petasan</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Perang Petasan 2D - MOBA</title>
     <style>
-      :root {
-        color-scheme: dark;
-      }
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #0b1020;
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      }
-      #touch-controls {
-        position: fixed; inset: 0; z-index: 8; display: none; pointer-events: none;
-      }
-      #touch-controls.show { display: block; }
-      #tc-joy-zone {
-        position: absolute; left: 0; bottom: 0; width: 42%; height: 55%;
-        display: flex; align-items: flex-end; justify-content: flex-start; padding: 0 0 28px 28px;
-        pointer-events: none;
-      }
-      #tc-joy-base {
-        width: min(34vw, 180px); aspect-ratio: 1; max-width: 180px; border-radius: 50%;
-        background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.14);
-        position: relative; pointer-events: auto; touch-action: none;
-        box-shadow: inset 0 0 24px rgba(0,0,0,0.2);
-      }
-      #tc-joy-base::before { content:''; position:absolute; inset:18%; border-radius:50%; border:1px solid rgba(255,255,255,0.07); }
-      #tc-joy-knob {
-        width: 38%; aspect-ratio: 1; border-radius: 50%; position: absolute; left: 50%; top: 50%;
-        transform: translate(-50%, -50%); background: radial-gradient(circle at 30% 30%, #9be7ff, #219ebc);
-        box-shadow: 0 8px 18px rgba(0,0,0,0.35); pointer-events: none;
-      }
-      #tc-actions {
-        position: absolute; right: 0; bottom: 0; width: 42%; height: 60%;
-        display: flex; align-items: flex-end; justify-content: flex-end; padding: 0 24px 24px 0;
-        pointer-events: none;
-      }
-      .tc-cluster { position: relative; width: min(36vw, 240px); aspect-ratio: 1; max-width: 240px; pointer-events: none; }
-      .tc-btn {
-        position: absolute; border: 0; color: #111; font-weight: 900; cursor: pointer; touch-action: none;
-        display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1;
-        box-shadow: 0 6px 0 rgba(0,0,0,0.28); pointer-events: auto; user-select: none;
-      }
-      .tc-btn .lbl { font-size: 11px; letter-spacing:.4px; }
-      .tc-btn .sub { font-size: 8px; opacity:.72; margin-top:2px; }
-      .tc-btn:active, .tc-btn.active { transform: translateY(3px) scale(.98); box-shadow: 0 3px 0 rgba(0,0,0,0.28); filter: brightness(1.08); }
-      #tc-punch { width: 44%; aspect-ratio:1; right: 4%; bottom: 4%; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffb3ad, #ff5252); }
-      #tc-punch .lbl { font-size: 14px; }
-      .tc-skill { width: 25%; aspect-ratio:1; border-radius: 50%; border: 2px solid rgba(255,255,255,0.15); }
-      #tc-bomb { right: 36%; bottom: 44%; background: radial-gradient(circle at 35% 30%, #ffe082, #ffb300); }
-      #tc-jump { right: 58%; bottom: 18%; background: radial-gradient(circle at 35% 30%, #b9f6ca, #69f0ae); }
-      #tc-grab { right: 12%; bottom: 52%; background: radial-gradient(circle at 35% 30%, #b3d4ff, #448aff); }
-      @media (max-width: 700px) {
-        #tc-joy-base { width: min(38vw, 160px); }
-        .tc-cluster { width: min(42vw, 210px); }
-      }
-      @media (max-height: 500px) {
-        #tc-joy-base { width: min(32vh, 140px); }
-        .tc-cluster { width: min(40vh, 190px); }
-        #tc-joy-zone { padding-bottom: 14px; padding-left: 14px; }
-        #tc-actions { padding-bottom: 14px; padding-right: 14px; }
-      }
-      #orient-hint {
-        position: fixed; left: 12px; bottom: 12px; z-index: 30; display: none;
-        background: rgba(15,23,42,0.88); color: #fff; padding: 10px 12px; border-radius: 12px;
-        font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); max-width: min(320px, calc(100vw - 24px));
-      }
-      #orient-hint.show { display: block; }
-      #orient-hint b { color: #ffd54f; }
-      #orient-hint .row { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
-      #orient-hint button { border:0; border-radius:8px; padding:8px 10px; font-weight:700; cursor:pointer; pointer-events:auto; }
-      #btn-fs-game { background:#ffd54f; color:#111; }
-      #btn-hide-orient { background:#334155; color:#fff; }
-      @media (orientation: landscape) { #orient-hint.auto-hide { display:none !important; } }
-      #app {
-        position: fixed;
-        inset: 0;
-      }
-      #app canvas {
-        display: block;
-      }
-      #overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 10;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        background: #0b1020;
-        color: #fff;
-        transition: opacity 0.35s ease;
-      }
-      #overlay.hidden {
-        opacity: 0;
-        pointer-events: none;
-      }
-      #overlay h1 {
-        font-size: clamp(24px, 5vw, 40px);
-        letter-spacing: 4px;
-      }
-      #overlay p {
-        opacity: 0.7;
-        font-size: 14px;
-      }
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #111827; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; touch-action: none; }
+      #app { position: fixed; inset: 0; display: grid; place-items: center; }
+      canvas { display: block; width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16)); max-width: 100%; max-height: 100%; background: #87ceeb; touch-action: none; }
       #hud {
-        position: fixed;
-        left: 12px;
-        bottom: 12px;
-        z-index: 5;
-        padding: 10px 14px;
-        border-radius: 10px;
-        background: rgba(8, 12, 24, 0.55);
-        color: #fff;
-        font-size: 13px;
-        line-height: 1.6;
-        pointer-events: none;
-        backdrop-filter: blur(4px);
+        position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 10px;
+        background: rgba(15,23,42,.58); color: #fff; font-size: 12px; z-index: 20; backdrop-filter: blur(4px);
       }
-      #hud b {
-        color: #ffd54f;
+      #hud b { color: #ffd54f; }
+      #hint {
+        position: fixed; top: 44px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 11px;
+        background: rgba(15,23,42,.45); padding: 4px 8px; border-radius: 8px; z-index: 20;
       }
-      #room-info {
-        position: fixed;
-        top: 12px;
-        right: 12px;
-        z-index: 6;
-        padding: 10px 14px;
-        border-radius: 10px;
-        background: rgba(8, 12, 24, 0.62);
-        color: #fff;
-        font-size: 13px;
-        line-height: 1.5;
-        backdrop-filter: blur(4px);
-        max-width: min(360px, calc(100vw - 24px));
+      @media (max-width: 900px) { #hint { display: none; } }
+
+      /* MOBA controls */
+      #moba-controls { position: fixed; inset: 0; pointer-events: none; z-index: 15; }
+      .joy-zone { position: absolute; left: 0; bottom: 0; width: 42%; height: 55%; pointer-events: none; }
+      .joy-base {
+        position: absolute; left: 28px; bottom: 28px; width: 128px; height: 128px; border-radius: 50%;
+        background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.22);
+        pointer-events: auto; touch-action: none;
       }
-      #room-info .code { font-size: 24px; font-weight: 800; letter-spacing: 3px; color: #ffd54f; }
-      #room-info .muted { opacity: .75; font-size: 12px; word-break: break-word; }
-      #room-actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
-      #room-actions button {
-        pointer-events: auto; cursor: pointer; border: 0; border-radius: 8px; padding: 7px 10px;
-        font-size: 12px; font-weight: 700; color: #111; background: #ffd54f;
+      .joy-knob {
+        position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin-left: -28px; margin-top: -28px;
+        border-radius: 50%; background: rgba(255,213,79,0.85); box-shadow: 0 4px 12px rgba(0,0,0,.3);
       }
-      #room-actions button.secondary { background: #d0d7e2; }
-      #powerup-hud { margin-top: 4px; color: #ffe082; font-size: 12px; min-height: 18px; }
-      .select-row { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      .select-row label { display:block; font-size:11px; opacity:.8; margin-bottom:2px; }
-      .select-row select { width:100%; pointer-events:auto; border-radius:8px; border:1px solid rgba(255,255,255,.15); background:#182033; color:#fff; padding:6px 8px; font-size:12px; }
-      #mode-status { margin-top:6px; font-size:12px; color:#b3e5fc; min-height:18px; }
-      #round-hud {
-        position: fixed; top: 10px; right: 10px; z-index: 6;
-        padding: 8px 10px; border-radius: 10px; background: rgba(8,12,24,.58); color:#fff;
-        font-size: 11px; line-height: 1.35; backdrop-filter: blur(4px); text-align: right;
-        min-width: 140px; max-width: min(240px, calc(100vw - 20px));
+      .btn-zone { position: absolute; right: 0; bottom: 0; width: 50%; height: 60%; pointer-events: none; }
+      .skill-row { position: absolute; right: 24px; bottom: 150px; display: flex; gap: 10px; pointer-events: auto; }
+      .main-row { position: absolute; right: 24px; bottom: 24px; display: flex; gap: 14px; align-items: flex-end; pointer-events: auto; }
+      .act-btn {
+        position: relative; width: 68px; height: 68px; border-radius: 50%; border: 2px solid rgba(255,255,255,.25);
+        background: rgba(30,41,59,.72); color: #fff; font-weight: 800; pointer-events: auto; touch-action: none;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; user-select: none;
       }
-      #round-title { color: #ffd54f; font-weight: 800; font-size: 12px; margin-bottom: 2px; }
-      #round-hud .lives { font-size: 11px; opacity: .92; margin-top: 2px; white-space: pre-wrap; }
-      #round-banner, #podium {
-        position: fixed; inset: 0; z-index: 12; display: none; align-items: center; justify-content: center;
-        background: rgba(5,8,16,0.45); color: #fff; backdrop-filter: blur(2px);
+      .act-btn .lbl { font-size: 12px; line-height: 1; }
+      .act-btn .sub { font-size: 9px; opacity: .75; margin-top: 2px; }
+      .act-btn.attack { width: 92px; height: 92px; background: rgba(239,68,68,.75); border-color: rgba(255,255,255,.3); }
+      .act-btn.jump { width: 72px; height: 72px; background: rgba(59,130,246,.72); }
+      .act-btn.skill { width: 62px; height: 62px; background: rgba(245,158,11,.7); }
+      .act-btn.ulti { width: 66px; height: 66px; background: rgba(100,116,139,.7); }
+      .act-btn.ulti.ready { background: rgba(168,85,247,.85); box-shadow: 0 0 18px rgba(168,85,247,.7); }
+      .act-btn.pressed { transform: scale(0.95); }
+      .act-btn.cooling { filter: grayscale(0.35) brightness(0.85); }
+      .cd { position: absolute; inset: -2px; width: calc(100% + 4px); height: calc(100% + 4px); transform: rotate(-90deg); pointer-events: none; }
+      .cd-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 3; }
+      .cd-fg { fill: none; stroke: rgba(15,23,42,0.65); stroke-width: 3.2; stroke-dasharray: 100.5; stroke-dashoffset: 100.5; }
+      .ulti-bar { position: absolute; bottom: 6px; left: 10px; right: 10px; height: 4px; background: rgba(0,0,0,.35); border-radius: 4px; overflow: hidden; }
+      .ulti-fill { width: 0%; height: 100%; background: #ffd54f; }
+      .ulti.ready .ulti-fill { background: #e879f9; }
+      .aim-hint {
+        position: absolute; right: 24px; bottom: 250px; color: #fff; font-size: 12px; font-weight: 700;
+        background: rgba(15,23,42,.55); padding: 6px 10px; border-radius: 8px; display: none; pointer-events: none;
       }
-      #round-banner.show, #podium.show { display: flex; }
-      .panel {
-        background: rgba(10,16,30,0.88); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px;
-        padding: 24px 28px; text-align: center; min-width: min(520px, calc(100vw - 32px));
-        box-shadow: 0 20px 50px rgba(0,0,0,.35);
+      .aim-hint.show { display: block; }
+
+      @media (max-width: 700px) {
+        .joy-base { width: 108px; height: 108px; left: 18px; bottom: 18px; }
+        .joy-knob { width: 48px; height: 48px; margin-left: -24px; margin-top: -24px; }
+        .act-btn.attack { width: 80px; height: 80px; }
+        .act-btn.jump { width: 64px; height: 64px; }
+        .act-btn.skill { width: 54px; height: 54px; }
+        .act-btn.ulti { width: 58px; height: 58px; }
+        .skill-row { right: 16px; bottom: 130px; gap: 8px; }
+        .main-row { right: 16px; bottom: 16px; gap: 10px; }
       }
-      .panel h2 { font-size: clamp(28px,5vw,44px); letter-spacing: 2px; color:#ffd54f; margin-bottom: 8px; }
-      .panel p { opacity: .85; margin-bottom: 10px; }
-      .panel table { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 14px; }
-      .panel td, .panel th { padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,.12); text-align:left; }
-      .panel th { color:#ffd54f; font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
-      .panel button { pointer-events:auto; cursor:pointer; border:0; border-radius:10px; padding:10px 16px; font-weight:800; background:#ffd54f; color:#111; }
-      #mute-btn { pointer-events:auto; }
-      #tuning-toggle {
-        position: fixed; left: 12px; top: 12px; z-index: 7;
-        pointer-events: auto; cursor: pointer; border: 0; border-radius: 8px;
-        padding: 7px 10px; font-size: 12px; font-weight: 700; color: #111; background: #ffd54f;
-        box-shadow: 0 4px 14px rgba(0,0,0,.25);
+      @media (orientation: portrait) {
+        #rotate { display: flex !important; }
       }
-      #tuning-drawer {
-        position: fixed; left: 12px; top: 48px; z-index: 7; width: min(320px, calc(100vw - 24px));
-        padding: 12px 14px; border-radius: 12px; background: rgba(8,12,24,0.82); color: #fff;
-        backdrop-filter: blur(6px); font-size: 12px; line-height: 1.4; display: none;
-        border: 1px solid rgba(255,255,255,0.08);
+      #rotate {
+        display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.85); color: #fff;
+        align-items: center; justify-content: center; text-align: center; padding: 24px; font-size: 20px; font-weight: 700;
       }
-      #tuning-drawer.open { display: block; }
-      #tuning-drawer h3 { font-size: 13px; color: #ffd54f; margin-bottom: 8px; letter-spacing: .5px; }
-      .tune-row { margin-bottom: 8px; }
-      .tune-row label { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 2px; opacity: .95; }
-      .tune-row output { color: #ffd54f; font-variant-numeric: tabular-nums; }
-      .tune-row input[type="range"] { width: 100%; accent-color: #ffd54f; cursor: pointer; }
-      #tuning-reset {
-        width: 100%; margin-top: 4px; pointer-events: auto; cursor: pointer; border: 0; border-radius: 8px;
-        padding: 8px 10px; font-size: 12px; font-weight: 700; color: #111; background: #d0d7e2;
+      #picker {
+        position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 25;
+        display: flex; gap: 8px; padding: 8px; border-radius: 12px; background: rgba(15,23,42,.62); backdrop-filter: blur(4px);
       }
+      .pick {
+        border: 2px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06); color: #fff; border-radius: 10px;
+        padding: 6px 10px; cursor: pointer; font-size: 12px; font-weight: 700; min-width: 86px;
+      }
+      .pick small { display: block; font-weight: 500; opacity: .75; font-size: 10px; }
+      .pick.active { border-color: #ffd54f; background: rgba(255,213,79,.15); }
+      @media (max-width: 700px) { #picker { top: auto; bottom: 200px; transform: translateX(-50%) scale(.92); } .pick { min-width: 72px; padding: 5px 7px; } }
     </style>
   </head>
   <body>
-    <div id="app"></div>
-
-    <div id="round-hud">
-      <div id="round-title">Ronde 1 / 3</div>
-      <div id="lives-hud" class="lives"></div>
-      <div id="mode-status" class="lives"></div>
+    <div id="app"><canvas id="game" width="1280" height="720"></canvas></div>
+    <div id="hud">Angin: <b id="wind">0</b> &nbsp;|&nbsp; <b id="status">Siap!</b></div>
+    <div id="hint">PC: A/D gerak, Spasi lompat, J basic, K skill1, L skill2, I ulti, mouse drag di canvas untuk bidik</div>
+    <div id="picker">
+      <button class="pick active" data-char="udin">Bang Udin<small>S1 Banting</small></button>
+      <button class="pick" data-char="sari">Mbak Sari<small>S1 Renteng</small></button>
+      <button class="pick" data-char="hendra">Mas Hendra<small>S1 Dorong</small></button>
+      <button class="pick" data-char="dika">Dika<small>S1 Kilat</small></button>
     </div>
-
-    <div id="powerup-hud" style="position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;color:#fff;font-size:12px;text-shadow:0 2px 8px rgba(0,0,0,.8);pointer-events:none;"></div>
-
-    <button id="settings-btn" type="button" style="position:fixed;top:10px;left:10px;z-index:9;border:0;border-radius:10px;padding:8px 10px;background:rgba(15,23,42,.7);color:#fff;font-size:14px;cursor:pointer;">⚙️ Setting</button>
-    <div id="settings-menu" style="display:none;position:fixed;top:48px;left:10px;z-index:9;width:min(220px,calc(100vw - 20px));background:rgba(15,23,42,.94);color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px;backdrop-filter:blur(4px);">
-      <button id="menu-sound" type="button" style="width:100%;text-align:left;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:#fff;cursor:pointer;">🔊 Suara</button>
-      <button id="menu-controls" type="button" style="width:100%;text-align:left;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:#fff;cursor:pointer;">🎮 Kontrol</button>
-      <button id="menu-exit" type="button" style="width:100%;text-align:left;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:#ffb4b4;cursor:pointer;">🚪 Keluar</button>
-    </div>
-    <div id="controls-settings" style="display:none;position:fixed;top:48px;left:10px;z-index:9;width:min(280px,calc(100vw - 20px));background:rgba(15,23,42,.92);color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;font-size:12px;backdrop-filter:blur(4px);">
-      <div style="font-weight:800;color:#ffd54f;margin-bottom:8px;">Atur Kontrol</div>
-      <label>Ukuran Joystick <input id="ctl-joy-size" type="range" min="90" max="220" value="150" style="width:100%"></label>
-      <label>Ukuran Tombol <input id="ctl-btn-size" type="range" min="70" max="140" value="100" style="width:100%"></label>
-      <label>Margin Bawah <input id="ctl-bottom" type="range" min="0" max="80" value="24" style="width:100%"></label>
-      <label>Margin Samping <input id="ctl-side" type="range" min="0" max="80" value="24" style="width:100%"></label>
-      <div style="display:flex;gap:8px;margin-top:8px;"><button id="ctl-reset" type="button" style="flex:1;padding:8px;border:0;border-radius:8px;background:#334155;color:#fff;cursor:pointer;">Reset</button><button id="ctl-close" type="button" style="flex:1;padding:8px;border:0;border-radius:8px;background:#ffd54f;color:#111;cursor:pointer;font-weight:700;">Tutup</button></div>
-    </div>
-
-
-    <div id="round-banner"><div class="panel"><h2 id="round-banner-title">Ronde Selesai</h2><p id="round-banner-sub"></p></div></div>
-    <div id="podium"><div class="panel"><h2>Papan Skor Akhir</h2><p id="podium-sub">Pertandingan selesai</p><div id="podium-table"></div><button id="btn-play-again" type="button">Main Lagi</button></div></div>
-
-    <div id="overlay">
-      <div class="lobby-card" style="width:min(560px,calc(100vw - 32px));background:linear-gradient(180deg,rgba(30,41,59,0.96),rgba(15,23,42,0.96));border:1px solid rgba(255,255,255,0.12);border-radius:24px;padding:28px;backdrop-filter:blur(10px);color:#fff;box-shadow:0 20px 60px rgba(0,0,0,0.45);">
-        <div style="text-align:center;margin-bottom:18px;">
-          <div style="font-size:13px;letter-spacing:2px;color:#ffd54f;font-weight:800;margin-bottom:4px;">PARTY GAME</div>
-          <h1 style="font-size:clamp(30px,6vw,48px);letter-spacing:2px;margin:0;line-height:1;">PERANG PETASAN</h1>
-          <p id="overlay-status" style="opacity:.8;font-size:14px;margin-top:8px;">Kumpulkan teman, buat party, dan main bareng!</p>
-        </div>
-
-        <div id="lobby-main">
-          <label style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Nama Pemain</label>
-          <input id="lobby-name" maxlength="14" placeholder="Nama kamu..." style="width:100%;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:16px;margin-bottom:10px;" />
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
-            <div>
-              <div style="font-size:13px;opacity:.85;margin-bottom:6px;">Warna Kostum</div>
-              <div id="lobby-colors" style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button type="button" class="lobby-swatch" data-color="#ff4d4d" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#ff4d4d;cursor:pointer;"></button>
-                <button type="button" class="lobby-swatch" data-color="#4da6ff" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#4da6ff;cursor:pointer;"></button>
-                <button type="button" class="lobby-swatch" data-color="#ffd84d" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#ffd84d;cursor:pointer;"></button>
-                <button type="button" class="lobby-swatch" data-color="#4dff88" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#4dff88;cursor:pointer;"></button>
-                <button type="button" class="lobby-swatch" data-color="#b84dff" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#b84dff;cursor:pointer;"></button>
-                <button type="button" class="lobby-swatch" data-color="#ff944d" style="width:28px;height:28px;border-radius:50%;border:2px solid transparent;background:#ff944d;cursor:pointer;"></button>
-              </div>
-            </div>
-            <div>
-              <div style="font-size:13px;opacity:.85;margin-bottom:6px;">Tipe Karakter</div>
-              <select id="lobby-character" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:14px;">
-                <option value="klasik">Klasik</option>
-                <option value="topi">Topi</option>
-                <option value="visor">Visor</option>
-                <option value="tanduk">Tanduk</option>
-              </select>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
-            <div>
-              <label for="arena-select" style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Arena</label>
-              <select id="arena-select" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:14px;">
-                <option value="alun_alun">Alun-Alun</option>
-                <option value="tangga_tinggi">Tangga Tinggi</option>
-                <option value="jembatan_chaos">Jembatan Chaos</option>
-              </select>
-            </div>
-            <div>
-              <label for="mode-select" style="display:block;font-size:13px;opacity:.85;margin-bottom:6px;">Mode</label>
-              <select id="mode-select" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:14px;">
-                <option value="ffa">Free-For-All</option>
-                <option value="koth">King of the Hill</option>
-                <option value="ctf">Capture the Flag</option>
-              </select>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
-            <button id="btn-host" type="button" style="padding:14px;border:0;border-radius:14px;background:linear-gradient(180deg,#ffe082,#ffca28);color:#111;font-weight:900;font-size:16px;cursor:pointer;">🎉 Buat Party</button>
-            <button id="btn-solo" type="button" style="padding:14px;border:0;border-radius:14px;background:#334155;color:#fff;font-weight:800;font-size:16px;cursor:pointer;">Main Solo</button>
-          </div>
-          <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px;">
-            <div style="font-size:13px;opacity:.8;margin-bottom:8px;">Gabung Party Teman</div>
-            <div style="display:flex;gap:10px;">
-              <input id="lobby-code" maxlength="4" placeholder="KODE" style="flex:1;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:20px;text-transform:uppercase;letter-spacing:5px;text-align:center;font-weight:800;" />
-              <button id="btn-join" type="button" style="padding:12px 20px;border:0;border-radius:12px;background:#4fc3f7;color:#111;font-weight:900;font-size:16px;cursor:pointer;">Gabung</button>
-            </div>
-          </div>
-          <p id="lobby-msg" style="min-height:20px;margin-top:12px;font-size:13px;text-align:center;color:#ffb4b4;"></p>
-        </div>
-
-        <div id="party-panel" style="display:none;">
-          <div style="background:rgba(255,213,79,0.1);border:1px solid rgba(255,213,79,0.25);border-radius:14px;padding:14px;text-align:center;margin-bottom:14px;">
-            <div style="font-size:12px;opacity:.8;margin-bottom:4px;">KODE PARTY</div>
-            <div id="party-code" style="font-size:36px;letter-spacing:6px;font-weight:900;color:#ffd54f;">----</div>
-            <canvas id="party-qr" width="180" height="180" style="width:180px;height:180px;max-width:70vw;background:#fff;border-radius:12px;padding:8px;margin:10px auto 8px;display:block;"></canvas>
-            <div id="party-url" style="font-size:12px;opacity:.75;margin-top:4px;word-break:break-all;"></div>
-            <button id="btn-copy-controller" type="button" style="margin-top:8px;padding:8px 12px;border:0;border-radius:10px;background:rgba(255,255,255,0.12);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">Salin Link Gabung</button>
-            <div style="margin-top:10px;text-align:left;">
-              <label for="party-host-origin" style="display:block;font-size:11px;opacity:.72;margin-bottom:4px;">Host/IP HP (opsional, contoh: http://192.168.1.5:5173)</label>
-              <input id="party-host-origin" type="text" placeholder="Kosongkan = pakai alamat saat ini" style="width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(0,0,0,0.2);color:#fff;font-size:12px;" />
-            </div>
-          </div>
-          <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px;margin-bottom:14px;">
-            <div style="font-size:13px;opacity:.8;margin-bottom:8px;">Pemain di Party</div>
-            <div id="party-players" style="display:flex;flex-direction:column;gap:6px;font-size:14px;"></div>
-          </div>
-          <div id="party-actions" style="display:flex;gap:10px;">
-            <button id="btn-party-start" type="button" style="flex:1;padding:14px;border:0;border-radius:14px;background:linear-gradient(180deg,#81c784,#4caf50);color:#111;font-weight:900;font-size:16px;cursor:pointer;">Mulai Main</button>
-          </div>
-          <p id="party-msg" style="min-height:20px;margin-top:10px;font-size:13px;text-align:center;color:#9bf6a3;"></p>
-        </div>
-      </div>
-    </div>
-
-    <div id="touch-controls" aria-label="Kontrol game">
-      <div id="tc-joy-zone">
-        <div id="tc-joy-base"><div id="tc-joy-knob"></div></div>
-      </div>
-      <div id="tc-actions">
-        <div class="tc-cluster">
-          <button id="tc-bomb" class="tc-btn tc-skill" data-action="bomb"><span class="lbl">BOM</span><span class="sub">PETASAN</span></button>
-          <button id="tc-grab" class="tc-btn tc-skill" data-action="grabThrow"><span class="lbl">GRAB</span><span class="sub">ANGKAT</span></button>
-          <button id="tc-jump" class="tc-btn tc-skill" data-action="jump"><span class="lbl">JUMP</span><span class="sub">LOMPAT</span></button>
-          <button id="tc-punch" class="tc-btn tc-attack" data-action="punch"><span class="lbl">TINJU</span><span class="sub">ATTACK</span></button>
-        </div>
-      </div>
-    </div>
-
-    <div id="orient-hint" class="show auto-hide">
-      <div><b>Landscape</b> disarankan untuk pengalaman terbaik. Aktifkan <b>Fullscreen</b> juga.</div>
-      <div class="row">
-        <button id="btn-fs-game" type="button">Fullscreen</button>
-        <button id="btn-hide-orient" type="button">Tutup</button>
-      </div>
-    </div>
-    <script>
-      (() => {
-        const hint = document.getElementById('orient-hint');
-        const fsBtn = document.getElementById('btn-fs-game');
-        const hideBtn = document.getElementById('btn-hide-orient');
-        function update() {
-          const landscape = window.matchMedia('(orientation: landscape)').matches;
-          hint.classList.toggle('auto-hide', landscape);
-          if (landscape) hint.classList.remove('show');
-        }
-        fsBtn?.addEventListener('click', async () => {
-          try { if (!document.fullscreenElement) await document.documentElement.requestFullscreen(); } catch (_) {}
-        });
-        hideBtn?.addEventListener('click', () => hint.classList.remove('show'));
-        window.addEventListener('resize', update);
-        window.addEventListener('orientationchange', update);
-        update();
-      })();
-    </script>
+    <div id="rotate">Putar HP ke mode <span style="color:#ffd54f">&nbsp;Landscape&nbsp;</span> untuk bermain</div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
