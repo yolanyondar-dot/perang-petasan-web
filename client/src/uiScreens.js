@@ -2,7 +2,7 @@ import { CHARACTER_LIST } from './charactersConfig.js';
 import { MAP_LIST, normalizeMapId } from './terrain.js';
 import { drawChibiHero2D, renderBallisticMapBackdrop, paintStylizedTerrainLayer } from './ballisticStyleAssets.js';
 import { drawQRToCanvas } from './qrcodeMini.js';
-import { getCharacterImage } from './assetLoader.js';
+import { getCharacterImage, getMapImage, getFxImage, setAssetOverride, clearAssetOverride, getAssetOverride, reloadAsset, assetKey, assetFilePath } from './assetLoader.js';
 
 const LS_NAME = 'pp_player_name';
 const COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4'];
@@ -111,11 +111,14 @@ export function createUIScreens(callbacks = {}) {
       const id = cv.dataset.thumb;
       const c = cv.getContext('2d');
       const w = cv.width, h = cv.height;
-      renderBallisticMapBackdrop(c, w, h, id, 0);
-      // mini terrain
-      const tc = document.createElement('canvas'); tc.width=w; tc.height=h;
-      paintStylizedTerrainLayer(tc.getContext('2d'), w, h, id);
-      c.drawImage(tc, 0, 0);
+      const bg = getMapImage(id, 'background');
+      if (bg) c.drawImage(bg, 0, 0, w, h);
+      else renderBallisticMapBackdrop(c, w, h, id, 0);
+      const tImg = getMapImage(id, 'terrain');
+      if (tImg) { c.drawImage(tImg, 0, 0, w, h); }
+      else { const tc = document.createElement('canvas'); tc.width=w; tc.height=h; paintStylizedTerrainLayer(tc.getContext('2d'), w, h, id); c.drawImage(tc, 0, 0); }
+      const ov = getMapImage(id, 'overlay');
+      if (ov) c.drawImage(ov, 0, 0, w, h);
     });
   }
 
@@ -245,6 +248,191 @@ export function createUIScreens(callbacks = {}) {
   }
 
   function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+
+  // ---- Asset Studio ----
+  const ASSET_TABS = [
+    { id: 'chars', label: 'Karakter' },
+    { id: 'maps', label: 'Map' },
+    { id: 'fx', label: 'Efek / Item' },
+    { id: 'guide', label: 'Panduan Folder' },
+  ];
+  const CHAR_POSES = [
+    { id: 'idle', label: 'Idle (diam)', hint: 'Pose berdiri' },
+    { id: 'aim', label: 'Aim (bidik)', hint: 'Pose mengangkat petasan' },
+    { id: 'throw', label: 'Throw (lempar)', hint: 'Saat melempar' },
+    { id: 'hurt', label: 'Hurt (kena)', hint: 'Saat kena damage (opsional)' },
+    { id: 'ko', label: 'KO (tumbang)', hint: 'Saat kalah/tumbang' },
+    { id: 'avatar', label: 'Avatar', hint: 'Foto kecil waiting room (opsional)' },
+  ];
+  const MAP_LAYERS = [
+    { id: 'background', label: 'Background', hint: '1280x720, langit/dekor belakang', wide: true },
+    { id: 'terrain', label: 'Terrain (tanah)', hint: '1280x720 PNG transparan. Area padat = alpha jelas, area kosong = transparan', wide: true },
+    { id: 'overlay', label: 'Overlay depan', hint: '1280x720 PNG transparan, dekor depan (opsional)', wide: true },
+  ];
+  const FX_ITEMS = [
+    { id: 'explosion', label: 'Ledakan' }, { id: 'smoke', label: 'Asap' }, { id: 'spark', label: 'Percikan' },
+    { id: 'pickup-energy', label: 'Item Energi' }, { id: 'pickup-hp', label: 'Item HP' }, { id: 'pickup-cooldown', label: 'Item Cooldown' },
+    { id: 'projectile-basic', label: 'Proyektil Basic' }, { id: 'projectile-skill', label: 'Proyektil Skill' }, { id: 'projectile-ulti', label: 'Proyektil Ulti' },
+  ];
+  let assetTab = 'chars';
+
+  function assetSlots(tab) {
+    if (tab === 'chars') {
+      const slots = [];
+      for (const ch of CHARACTER_LIST) {
+        for (const p of CHAR_POSES) {
+          const key = assetKey('char', ch.id, p.id);
+          slots.push({ key, title: `${ch.name} - ${p.label}`, meta: `File: <code>client/public/assets/characters/${ch.id}/${p.id}.png</code><br>${p.hint}. PNG transparan, 256x256 disarankan.`, wide: false, kind:'char', id:ch.id, name:p.id });
+        }
+      }
+      return slots;
+    }
+    if (tab === 'maps') {
+      const slots = [];
+      for (const m of MAP_LIST) {
+        for (const l of MAP_LAYERS) {
+          const key = assetKey('map', m.id, l.id);
+          slots.push({ key, title: `${m.name} - ${l.label}`, meta: `File: <code>client/public/assets/maps/${m.id}/${l.id}.png</code><br>${l.hint}.`, wide: !!l.wide, kind:'map', id:m.id, name:l.id });
+        }
+      }
+      return slots;
+    }
+    if (tab === 'fx') {
+      return FX_ITEMS.map(f => {
+        const key = assetKey('fx', f.id, 'main');
+        return { key, title: f.label, meta: `File: <code>client/public/assets/fx/${f.id}.png</code><br>PNG transparan, pivot tengah.`, wide: false, kind:'fx', id:f.id, name:'main' };
+      });
+    }
+    return [];
+  }
+
+  function getPreviewSrc(slot) {
+    const ov = getAssetOverride(slot.key);
+    if (ov) return ov;
+    // fallback to loaded manifest image by drawing to dataURL? Simpler: check manifest via known getters
+    if (slot.kind === 'char') { const img = getCharacterImage(slot.id, slot.name); return img?.src?.startsWith('data:') ? img.src : (img ? img.src : ''); }
+    if (slot.kind === 'map') { const img = getMapImage(slot.id, slot.name); return img?.src?.startsWith('data:') ? img.src : (img ? img.src : ''); }
+    if (slot.kind === 'fx') { const img = getFxImage(slot.id); return img?.src?.startsWith('data:') ? img.src : (img ? img.src : ''); }
+    return '';
+  }
+
+  function renderAssetStudio() {
+    const help = $('asset-help');
+    const grid = $('asset-grid');
+    if (!help || !grid) return;
+    $('asset-tabs')?.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === assetTab));
+    if (assetTab === 'guide') {
+      help.innerHTML = '<b>Cara mudah (tanpa coding):</b><br>1. Pilih tab Karakter/Map/Efek.<br>2. Klik <b>Upload Gambar</b> pada slot yang ingin diganti.<br>3. Gambar langsung tampil di game (tersimpan di browser ini).<br><br><b>Untuk permanen (masuk ke file game):</b> simpan file PNG dengan nama yang sama ke folder yang tertulis di setiap slot, lalu build/deploy ulang.';
+      grid.innerHTML = `
+        <div class="asset-card" style="grid-column:1/-1">
+          <h4>Struktur Folder Aset</h4>
+          <div class="meta">Taruh file di dalam folder <code>client/public/assets/</code></div>
+          <pre style="white-space:pre-wrap;font-size:12px;line-height:1.5;background:rgba(0,0,0,.25);padding:12px;border-radius:10px;overflow:auto">client/public/assets/
+  characters/
+    udin/  (idle.png, aim.png, throw.png, hurt.png, ko.png, avatar.png)
+    sari/  (idle.png, aim.png, throw.png, hurt.png, ko.png, avatar.png)
+    hendra/(idle.png, aim.png, throw.png, hurt.png, ko.png, avatar.png)
+    dika/  (idle.png, aim.png, throw.png, hurt.png, ko.png, avatar.png)
+  maps/
+    kampung_festival/ (background.png 1280x720, terrain.png 1280x720 transparan, overlay.png)
+    atap_senja/       (background.png, terrain.png, overlay.png)
+    jembatan_bulan/   (background.png, terrain.png, overlay.png)
+  fx/
+    explosion.png, smoke.png, spark.png
+    pickup-energy.png, pickup-hp.png, pickup-cooldown.png
+    projectile-basic.png, projectile-skill.png, projectile-ulti.png</pre>
+          <div class="meta"><b>Penting untuk terrain.png:</b> gambar tanah harus punya alpha/transparansi. Bagian padat = bisa diinjak. Bagian transparan = kosong/udara. Saat petasan meledak, terrain akan berlubang otomatis.</div>
+        </div>`;
+      return;
+    }
+
+    const helpText = {
+      chars: '<b>Karakter:</b> upload PNG transparan. Ukuran disarankan <b>256x256</b>. Karakter menghadap <b>kanan</b>, kaki dekat bawah gambar. Nama file harus sama persis seperti tertulis.',
+      maps: '<b>Map:</b> ukuran <b>1280x720</b>. <code>background.png</code> untuk langit/dekor. <code>terrain.png</code> harus PNG transparan: bagian tanah padat, bagian udara transparan. <code>overlay.png</code> dekor depan opsional.',
+      fx: '<b>Efek/Item:</b> PNG transparan, pivot tengah. Gunakan untuk ledakan, asap, item drop, proyektil.',
+    };
+    help.innerHTML = helpText[assetTab] || '';
+    const slots = assetSlots(assetTab);
+    grid.innerHTML = slots.map(s => {
+      const ov = getAssetOverride(s.key);
+      const src = getPreviewSrc(s);
+      const status = ov ? 'Pakai upload browser' : (src ? 'Pakai file/fallback terdeteksi' : 'Belum ada gambar (pakai gambar prosedural)');
+      const statusCls = ov || src ? 'asset-status' : 'asset-status empty';
+      return `<div class="asset-card" data-key="${escapeHtml(s.key)}">
+        <h4>${escapeHtml(s.title)}</h4>
+        <div class="meta">${s.meta}</div>
+        ${src ? `<img class="asset-preview ${s.wide?'wide':''}" src="${src}" alt="preview">` : `<div class="asset-preview ${s.wide?'wide':''}" style="display:grid;place-items:center;color:rgba(255,255,255,.45);font-size:12px">Belum ada gambar</div>`}
+        <div class="${statusCls}">${status}</div>
+        <div class="asset-actions">
+          <label class="btn blue">Upload Gambar<input type="file" accept="image/*" data-upload="${escapeHtml(s.key)}"></label>
+          <button class="btn" data-reset="${escapeHtml(s.key)}">Reset</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    grid.querySelectorAll('input[data-upload]').forEach(inp => {
+      inp.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        const key = inp.dataset.upload;
+        if (!file || !key) return;
+        const slot = slots.find(s => s.key === key);
+        const card = inp.closest('.asset-card');
+        const statusEl = card?.querySelector('.asset-status');
+        if (statusEl) statusEl.textContent = 'Memuat gambar...';
+        try {
+          const dataUrl = await readFileAsDataURL(file);
+          await setAssetOverride(key, dataUrl);
+          await reloadAsset(key);
+          if (statusEl) { statusEl.textContent = 'Pakai upload browser ✓'; statusEl.className = 'asset-status'; }
+          renderAssetStudio(); // refresh previews
+          callbacks.onAssetChanged?.({ key, kind: slot?.kind, id: slot?.id, name: slot?.name });
+        } catch (err) {
+          console.error(err);
+          if (statusEl) { statusEl.textContent = 'Gagal upload gambar.'; statusEl.className = 'asset-status empty'; }
+        }
+        inp.value = '';
+      });
+    });
+    grid.querySelectorAll('button[data-reset]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const key = btn.dataset.reset;
+        const slot = slots.find(s => s.key === key);
+        await clearAssetOverride(key);
+        await reloadAsset(key);
+        renderAssetStudio();
+        callbacks.onAssetChanged?.({ key, kind: slot?.kind, id: slot?.id, name: slot?.name, reset: true });
+      });
+    });
+  }
+
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  function openAssetStudio() {
+    const el = $('asset-studio'); if (!el) return;
+    el.classList.add('active'); el.setAttribute('aria-hidden', 'false');
+    renderAssetStudio();
+  }
+  function closeAssetStudio() {
+    const el = $('asset-studio'); if (!el) return;
+    el.classList.remove('active'); el.setAttribute('aria-hidden', 'true');
+  }
+
+  $('btn-asset-studio')?.addEventListener('click', openAssetStudio);
+  $('asset-close')?.addEventListener('click', closeAssetStudio);
+  $('asset-studio')?.addEventListener('click', (e) => { if (e.target === $('asset-studio')) closeAssetStudio(); });
+  $('asset-tabs')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-tab]');
+    if (!btn) return;
+    assetTab = btn.dataset.tab;
+    renderAssetStudio();
+  });
 
   // Login
   const nameInput = $('login-name');

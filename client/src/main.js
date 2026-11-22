@@ -127,6 +127,14 @@ const ui = createUIScreens({
       ui.show('lobby');
     }
   },
+  onAssetChanged: ({ kind, id, name }) => {
+    if (kind === 'map' && terrain && id === terrain.mapId) {
+      // terrain image affects collision canvas; background/overlay are drawn live
+      if (name === 'terrain') terrain.generate();
+    }
+    // refresh lobby thumbnails/waiting previews by re-rendering
+    if (ui.state.screen === 'lobby') ui.renderMaps();
+  },
 });
 
 // Keep ui state in sync

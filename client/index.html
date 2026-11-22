@@ -113,6 +113,34 @@
       .join-row input { flex:1; min-width:0; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.15); background:rgba(255,255,255,.08); color:#fff; font-size:16px; text-transform:uppercase; font-weight:800; letter-spacing:2px; text-align:center; }
       #lobby-status { margin-top:8px; min-height:18px; }
 
+      /* Asset Studio */
+      #asset-studio { position:fixed; inset:0; z-index:80; display:none; background:rgba(2,6,23,.72); backdrop-filter:blur(6px); padding:14px; overflow:auto; }
+      #asset-studio.active { display:block; }
+      .asset-panel { max-width:1100px; margin:0 auto; background:rgba(15,23,42,.94); border:1px solid rgba(255,255,255,.14); border-radius:18px; box-shadow:0 20px 60px rgba(0,0,0,.45); color:#fff; }
+      .asset-head { display:flex; gap:12px; justify-content:space-between; align-items:flex-start; padding:16px 18px; border-bottom:1px solid rgba(255,255,255,.1); }
+      .asset-head h2 { font-size:24px; margin-bottom:4px; }
+      .asset-head p { color:rgba(255,255,255,.76); font-size:13px; line-height:1.45; }
+      .asset-body { padding:16px 18px; }
+      .asset-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+      .asset-tab { padding:10px 14px; border-radius:10px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:#fff; font-weight:700; cursor:pointer; }
+      .asset-tab.active { background:rgba(250,204,21,.18); border-color:rgba(250,204,21,.6); color:#fde68a; }
+      .asset-help { background:rgba(59,130,246,.12); border:1px solid rgba(59,130,246,.25); border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.55; color:rgba(255,255,255,.9); margin-bottom:14px; }
+      .asset-help code { background:rgba(255,255,255,.1); padding:1px 5px; border-radius:5px; font-size:12px; }
+      .asset-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
+      .asset-card { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:14px; padding:12px; }
+      .asset-card h4 { font-size:14px; margin-bottom:2px; }
+      .asset-card .meta { font-size:12px; color:rgba(255,255,255,.68); margin-bottom:8px; line-height:1.4; word-break:break-word; }
+      .asset-preview { width:100%; aspect-ratio:1/1; max-height:160px; object-fit:contain; background:linear-gradient(45deg,#1e293b 25%,#334155 25%,#334155 50%,#1e293b 50%,#1e293b 75%,#334155 75%,#334155 100%); background-size:24px 24px; border-radius:10px; border:1px solid rgba(255,255,255,.08); display:block; margin-bottom:8px; }
+      .asset-preview.wide { aspect-ratio:16/9; max-height:140px; }
+      .asset-status { font-size:11px; color:#86efac; margin-bottom:8px; min-height:16px; }
+      .asset-status.empty { color:rgba(255,255,255,.55); }
+      .asset-actions { display:flex; gap:8px; flex-wrap:wrap; }
+      .asset-actions .btn { padding:8px 10px; font-size:12px; border-radius:9px; }
+      .asset-actions input[type=file] { display:none; }
+      .asset-footer { padding:12px 18px 18px; color:rgba(255,255,255,.65); font-size:12px; line-height:1.5; border-top:1px solid rgba(255,255,255,.08); }
+      @media (max-width: 700px) { .asset-head { flex-direction:column; } .asset-grid { grid-template-columns:1fr 1fr; } }
+      @media (max-width: 480px) { .asset-grid { grid-template-columns:1fr; } }
+
       /* Waiting */
       .waiting-wrap { flex:1; display:grid; place-items:center; }
       .waiting-card { width:min(980px,100%); padding:18px; }
@@ -216,6 +244,7 @@
                 <input id="join-code-input" maxlength="4" placeholder="KODE" />
                 <button id="btn-join-room" class="btn">MASUK</button>
               </div>
+              <button id="btn-asset-studio" class="btn">🎨 KELOLA ASET GAMBAR</button>
               <div id="lobby-status" class="muted"></div>
             </div>
           </div>
@@ -251,6 +280,30 @@
             <p id="waiting-status" class="muted" style="margin-top:10px; min-height:18px;"></p>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ASSET STUDIO -->
+    <div id="asset-studio" aria-hidden="true">
+      <div class="asset-panel">
+        <div class="asset-head">
+          <div>
+            <h2>🎨 Kelola Aset Gambar</h2>
+            <p>Upload gambar untuk mengganti karakter, map, atau efek. Tidak perlu coding. Upload di sini tersimpan di browser ini (preview cepat). Untuk permanen, taruh file dengan nama yang sama di folder <code>client/public/assets/...</code>.</p>
+          </div>
+          <button id="asset-close" class="btn red">Tutup</button>
+        </div>
+        <div class="asset-body">
+          <div class="asset-tabs" id="asset-tabs">
+            <button class="asset-tab active" data-tab="chars">Karakter</button>
+            <button class="asset-tab" data-tab="maps">Map</button>
+            <button class="asset-tab" data-tab="fx">Efek / Item</button>
+            <button class="asset-tab" data-tab="guide">Panduan Folder</button>
+          </div>
+          <div id="asset-help" class="asset-help"></div>
+          <div id="asset-grid" class="asset-grid"></div>
+        </div>
+        <div class="asset-footer" id="asset-footer">Tip: setelah upload, aset langsung dipakai di lobby/arena. Jika upload terrain map, bentuk tanah/collision ikut berubah.</div>
       </div>
     </div>
 
