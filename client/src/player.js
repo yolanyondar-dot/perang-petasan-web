@@ -35,7 +35,7 @@ export function createPlayer(scene, options = {}) {
   const onThrowCb = typeof options.onThrow === 'function' ? options.onThrow : null;
   const onFuseCb = typeof options.onFuse === 'function' ? options.onFuse : null;
 
-  const maxHp = 100;
+  let maxHp = 100;
   let hp = 100;
   let hitFlash = 0;
   let stagger = 0;
@@ -940,21 +940,28 @@ export function createPlayer(scene, options = {}) {
     get remoteInput() { return remoteInput; },
     setRemoteInput,
     get hp() { return hp; },
+    set hp(v) { hp = Math.max(0, Math.min(maxHp, Number(v) || 0)); },
     get maxHp() { return maxHp; },
+    set maxHp(v) { maxHp = Math.max(1, Number(v) || 100); hp = Math.min(hp, maxHp); },
     get lives() { return lives; },
     set lives(v) { lives = Math.max(0, v | 0); },
     get score() { return score; },
     set score(v) { score = Math.max(0, v | 0); },
     get eliminated() { return eliminated; },
+    set eliminated(v) { eliminated = !!v; },
     get respawning() { return respawning; },
     set respawning(v) { respawning = !!v; },
     get spawnProtection() { return spawnProtection; },
+    set spawnProtection(v) { spawnProtection = Math.max(0, Number(v) || 0); },
     carriedFlag: null,
     team: null,
     get stagger() { return stagger; },
+    set stagger(v) { stagger = Math.max(0, Number(v) || 0); },
     get knockoutTimer() { return knockoutTimer; },
+    set knockoutTimer(v) { knockoutTimer = Math.max(0, Number(v) || 0); },
     get isRagdoll() { return isRagdoll; },
     get powerUp() { return powerUp; },
+    set powerUp(v) { powerUp = v || null; },
     applyPowerUp,
     clearPowerUp,
     get heldPetasan() { return heldPetasan; },

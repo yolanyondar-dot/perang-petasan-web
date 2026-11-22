@@ -719,7 +719,7 @@ async function bootstrap() {
     for (let i = 0; i < bots.length; i++) arr.push(serializePlayer(bots[i].player, `bot:${i}`));
     return {
       players: arr,
-      round: roundIndex, matchOver, roundOver, mode: modeManager?.mode, arena: arena?.type || ARENA.type,
+      round: roundNum, matchOver, roundOver, mode: modeManager?.mode, arena: arena?.type || ARENA.type,
       started: !!gameStarted,
     };
   }
@@ -743,25 +743,27 @@ async function bootstrap() {
 
   function applyPlayerState(p, s) {
     if (!p || !s) return;
-    try { p.body.setTranslation({ x: s.x, y: s.y, z: s.z }, true); } catch (_) {}
-    try { p.body.setLinvel({ x: 0, y: 0, z: 0 }, true); } catch (_) {}
-    if (p.group) {
-      p.group.position.set(s.x, s.y, s.z);
-      if (s.qw !== undefined) p.group.quaternion.set(s.qx, s.qy, s.qz, s.qw);
-    }
-    if (typeof s.hp === 'number') p.hp = s.hp;
-    if (typeof s.maxHp === 'number') p.maxHp = s.maxHp;
-    if (typeof s.lives === 'number') p.lives = s.lives;
-    if (typeof s.score === 'number') p.score = s.score;
-    if (typeof s.knockout === 'number') p.knockoutTimer = s.knockout;
-    if (typeof s.stagger === 'number') p.stagger = s.stagger;
-    if (typeof s.eliminated === 'boolean') p.eliminated = s.eliminated;
-    if (typeof s.respawning === 'boolean') p.respawning = s.respawning;
-    if (typeof s.spawnProtection === 'number') p.spawnProtection = s.spawnProtection;
-    if (s.name) { if (p.setName) p.setName(s.name); else p.name = s.name; }
-    if (s.team !== undefined) p.team = s.team;
-    p.powerUp = s.powerUp || null;
-    p.group.visible = !p.eliminated;
+    try {
+      try { p.body.setTranslation({ x: s.x, y: s.y, z: s.z }, true); } catch (_) {}
+      try { p.body.setLinvel({ x: 0, y: 0, z: 0 }, true); } catch (_) {}
+      if (p.group) {
+        p.group.position.set(s.x, s.y, s.z);
+        if (s.qw !== undefined) p.group.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+      }
+      if (typeof s.maxHp === 'number') p.maxHp = s.maxHp;
+      if (typeof s.hp === 'number') p.hp = s.hp;
+      if (typeof s.lives === 'number') p.lives = s.lives;
+      if (typeof s.score === 'number') p.score = s.score;
+      if (typeof s.knockout === 'number') p.knockoutTimer = s.knockout;
+      if (typeof s.stagger === 'number') p.stagger = s.stagger;
+      if (typeof s.eliminated === 'boolean') p.eliminated = s.eliminated;
+      if (typeof s.respawning === 'boolean') p.respawning = s.respawning;
+      if (typeof s.spawnProtection === 'number') p.spawnProtection = s.spawnProtection;
+      if (s.name) { if (p.setName) p.setName(s.name); else p.name = s.name; }
+      if (s.team !== undefined) p.team = s.team;
+      p.powerUp = s.powerUp || null;
+      if (p.group) p.group.visible = !p.eliminated;
+    } catch (e) { console.warn('applyPlayerState failed', e); }
   }
 
   function applyHostState(state) {
@@ -783,7 +785,7 @@ async function bootstrap() {
       for (const [id, entry] of [...remotes.entries()]) {
         if (!seen.has(id)) { removeRemote(id); }
       }
-      if (typeof state.round === 'number') roundIndex = state.round;
+      if (typeof state.round === 'number') roundNum = state.round;
       if (typeof state.matchOver === 'boolean') matchOver = state.matchOver;
       if (typeof state.roundOver === 'boolean') roundOver = state.roundOver;
       const startedFlag = state.started === undefined ? true : !!state.started;
