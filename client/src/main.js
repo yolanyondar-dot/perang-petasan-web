@@ -829,6 +829,7 @@ async function bootstrap() {
   }
   btnPartyStart?.addEventListener('click', () => {
     gameStarted = true;
+    try { network?.send?.({ type: 'game-state', state: buildHostState() }); } catch (_) {}
     if (resolvePartyStart) { resolvePartyStart(); resolvePartyStart = null; }
   });
 
@@ -895,6 +896,9 @@ async function bootstrap() {
       ensureRemotePlayer(id, name || 'Pemain', color, characterType);
       if (roomUrlEl && isOnlineHost) roomUrlEl.innerHTML = `Kode room: <b>${network.roomCode || '-'}</b><br><span class="muted">${remotes.size} pemain remote terhubung</span>`;
       refreshPartyUI();
+      if (isOnlineHost && network.connected) {
+        try { network.send({ type: 'game-state', state: buildHostState() }); } catch (_) {}
+      }
     },
     onPlayerInput: ({ controllerId, playerId, state, kind, name, color, characterType }) => {
       const id = playerId || controllerId;
@@ -906,6 +910,9 @@ async function bootstrap() {
       const id = playerId || controllerId;
       if (id) removeRemote(id);
       refreshPartyUI();
+      if (isOnlineHost && network.connected) {
+        try { network.send({ type: 'game-state', state: buildHostState() }); } catch (_) {}
+      }
     },
     onRoomClosed: () => {
       if (isOnlineClient) {
