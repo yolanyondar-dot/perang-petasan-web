@@ -2,6 +2,7 @@ import { CHARACTER_LIST } from './charactersConfig.js';
 import { MAP_LIST, normalizeMapId } from './terrain.js';
 import { drawChibiHero2D, renderBallisticMapBackdrop, paintStylizedTerrainLayer } from './ballisticStyleAssets.js';
 import { drawQRToCanvas } from './qrcodeMini.js';
+import { getCharacterImage } from './assetLoader.js';
 
 const LS_NAME = 'pp_player_name';
 const COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4'];
@@ -151,7 +152,16 @@ export function createUIScreens(callbacks = {}) {
       ctx.clearRect(0,0,128,128);
       const bg = ctx.createLinearGradient(0,0,0,128); bg.addColorStop(0,'#bfdbfe'); bg.addColorStop(1,'#fde68a');
       ctx.fillStyle = bg; ctx.fillRect(0,0,128,128);
-      drawChibiHero2D(ctx, { x: 64, y: 102, scale: 1.55, facing: 1, characterId: c.id, primaryColor: c.color, accentColor: c.skin?.shirt2 || '#facc15', walkPhase: 0, isAiming: false, showPedestal: true });
+      const img = getCharacterImage(c.id, 'avatar') || getCharacterImage(c.id, 'idle');
+      if (img) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(254,240,138,0.25)'; ctx.beginPath(); ctx.ellipse(64,106,44,12,0,0,Math.PI*2); ctx.fill();
+        const size = 256*1.55, px=128*1.55, py=220*1.55;
+        ctx.drawImage(img, 64-px, 102-py, size, size);
+        ctx.restore();
+      } else {
+        drawChibiHero2D(ctx, { x: 64, y: 102, scale: 1.55, facing: 1, characterId: c.id, primaryColor: c.color, accentColor: c.skin?.shirt2 || '#facc15', walkPhase: 0, isAiming: false, showPedestal: true });
+      }
     });
   }
 
@@ -208,16 +218,30 @@ export function createUIScreens(callbacks = {}) {
     c.fillStyle = g; c.fillRect(0,0,w,h);
     const charDef = CHARACTER_LIST.find(x=>x.id===state.charId) || CHARACTER_LIST[0];
     const bob = Math.sin(t*2.2) * 4;
-    drawChibiHero2D(c, {
-      x: w/2, y: h*0.78 + bob, scale: 2.3, facing: 1,
-      characterId: charDef.id,
-      primaryColor: state.costumeColor || charDef.color,
-      accentColor: charDef.skin?.shirt2 || '#facc15',
-      walkPhase: Math.sin(t*2) * 0.8,
-      aimAngle: -0.3,
-      isAiming: false,
-      showPedestal: true,
-    });
+    const showcaseImg = getCharacterImage(charDef.id, 'idle') || getCharacterImage(charDef.id, 'avatar');
+    if (showcaseImg) {
+      const scale = 2.3;
+      const size = 256 * scale;
+      const px = 128 * scale, py = 220 * scale;
+      // pedestal
+      c.save();
+      const pedGrad = c.createRadialGradient(w/2, h*0.78+bob+6, 6, w/2, h*0.78+bob+6, 56*scale/1);
+      pedGrad.addColorStop(0, 'rgba(254,240,138,0.9)'); pedGrad.addColorStop(0.6,'rgba(56,189,248,0.45)'); pedGrad.addColorStop(1,'rgba(56,189,248,0)');
+      c.fillStyle = pedGrad; c.beginPath(); c.ellipse(w/2, h*0.78+bob+6, 56*2.3/1.5, 16*2.3/1.5, 0, 0, Math.PI*2); c.fill();
+      c.restore();
+      c.drawImage(showcaseImg, w/2-px, h*0.78+bob-py, size, size);
+    } else {
+      drawChibiHero2D(c, {
+        x: w/2, y: h*0.78 + bob, scale: 2.3, facing: 1,
+        characterId: charDef.id,
+        primaryColor: state.costumeColor || charDef.color,
+        accentColor: charDef.skin?.shirt2 || '#facc15',
+        walkPhase: Math.sin(t*2) * 0.8,
+        aimAngle: -0.3,
+        isAiming: false,
+        showPedestal: true,
+      });
+    }
   }
 
   function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }

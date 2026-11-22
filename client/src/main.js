@@ -6,6 +6,7 @@ import { CHARACTER_LIST, getCharacter } from './charactersConfig.js';
 import { PickupManager } from './pickup2d.js';
 import { createNetwork } from './network.js';
 import { createUIScreens } from './uiScreens.js';
+import { preloadAssets } from './assetLoader.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -813,6 +814,7 @@ function loop(now) {
 }
 
 // init
+await preloadAssets();
 terrain = new Terrain(W, H, selectedMapId);
 controls.setEnabled(false);
 requestAnimationFrame(loop);

@@ -1,4 +1,5 @@
 import { renderBallisticMapBackdrop, paintStylizedTerrainLayer } from './ballisticStyleAssets.js';
+import { getMapImage } from './assetLoader.js';
 
 export const MAPS = {
   kampung_festival: { id: 'kampung_festival', name: 'Kampung Festival' },
@@ -37,8 +38,13 @@ export class Terrain {
     const { width: w, height: h } = this;
     this.ctx.clearRect(0, 0, w, h);
     this.decor = [];
-    paintStylizedTerrainLayer(this.ctx, w, h, this.mapId);
-    this._addDecor();
+    const terrainImg = getMapImage(this.mapId, 'terrain');
+    if (terrainImg) {
+      this.ctx.drawImage(terrainImg, 0, 0, w, h);
+    } else {
+      paintStylizedTerrainLayer(this.ctx, w, h, this.mapId);
+      this._addDecor();
+    }
     this._ensureSpawns();
   }
 
@@ -114,9 +120,13 @@ export class Terrain {
   }
 
   draw(ctx) {
-    renderBallisticMapBackdrop(ctx, this.width, this.height, this.mapId, performance.now() / 1000);
+    const bg = getMapImage(this.mapId, 'background');
+    if (bg) ctx.drawImage(bg, 0, 0, this.width, this.height);
+    else renderBallisticMapBackdrop(ctx, this.width, this.height, this.mapId, performance.now() / 1000);
     ctx.drawImage(this.canvas, 0, 0);
     this._drawDecor(ctx);
+    const overlay = getMapImage(this.mapId, 'overlay');
+    if (overlay) ctx.drawImage(overlay, 0, 0, this.width, this.height);
   }
 
   _drawDecor(ctx) {

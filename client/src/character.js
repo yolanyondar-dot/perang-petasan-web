@@ -1,5 +1,6 @@
 import { drawChibiHero2D } from './ballisticStyleAssets.js';
 import { drawCharacterHud2D } from './visualAssets2d.js';
+import { getCharacterImage } from './assetLoader.js';
 const GRAVITY = 1500;
 const MOVE_SPEED = 170;
 const JUMP_VEL = -560;
@@ -195,19 +196,31 @@ export class Character {
       ctx.translate(-kx, -ky);
     }
 
-    drawChibiHero2D(ctx, {
-      x: this.x,
-      y: this.y,
-      scale,
-      facing: this.facing || 1,
-      characterId: this.charId || 'udin',
-      primaryColor: this.skin?.shirt || this.color || '#ef4444',
-      accentColor: this.skin?.shirt2 || this.skin?.accessoryColor || '#facc15',
-      walkPhase,
-      aimAngle: aimRad,
-      isAiming: !opts.lobbyIdle,
-      showPedestal,
-    });
+    const pose = !this.alive ? 'ko' : (opts.lobbyIdle ? 'idle' : (Math.abs(this.vx) > 20 && this.onGround ? 'walk' : (this.throwAnim > 0 ? 'throw' : 'aim')));
+    const img = getCharacterImage(this.charId || 'udin', pose) || getCharacterImage(this.charId || 'udin', 'idle');
+    if (img) {
+      const size = 256 * scale;
+      const px = 128 * scale, py = 220 * scale; // pivot from spec
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      if ((this.facing || 1) < 0) ctx.scale(-1, 1);
+      ctx.drawImage(img, -px, -py, size, size);
+      ctx.restore();
+    } else {
+      drawChibiHero2D(ctx, {
+        x: this.x,
+        y: this.y,
+        scale,
+        facing: this.facing || 1,
+        characterId: this.charId || 'udin',
+        primaryColor: this.skin?.shirt || this.color || '#ef4444',
+        accentColor: this.skin?.shirt2 || this.skin?.accessoryColor || '#facc15',
+        walkPhase,
+        aimAngle: aimRad,
+        isAiming: !opts.lobbyIdle,
+        showPedestal,
+      });
+    }
 
     if (!this.alive) ctx.restore();
     ctx.restore();
